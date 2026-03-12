@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 const MASTER_RESUME = {
   name: "Annabel Otutu",
-  contact: "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  annabellotutu@gmail.com",
+  contact: "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
   summary: "",
   skills: ["Technical Writing","Confluence & Jira","NIST SP 800-37","API Documentation","CMS & SEO","Cybersecurity Compliance","SORN & PIA Development","Process Improvement","HTML Scripting","Content Strategy","Knowledge Management","Python Automation","Lucidchart","DevOps Documentation","Microsoft Teams","SharePoint","Section 508 Compliance","Adobe Acrobat Pro","Federal Documentation Standards","Version Control","SOPs & Policy Writing","Stakeholder Interviews","Agile / Sprint Methodology","Style Guide Adherence"],
   experience: [
@@ -69,7 +69,7 @@ Return ONLY valid JSON starting with { matching this exact schema:
 {
   "name": "Annabel Otutu",
   "headerTitle": "[Strategic title matching target role | Specialization]",
-  "contact": "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  annabellotutu@gmail.com",
+  "contact": "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  annabelotutu5@gmail.com",
   "summary": "[3-4 sentences using employer's own language]",
   "competencies": [
     { "category": "[Category from JD]", "items": ["Item1", "Item2", "Item3", "Item4"] },
@@ -77,7 +77,7 @@ Return ONLY valid JSON starting with { matching this exact schema:
   ],
   "experience": [
     {
-      "title": "[Original or strategically reframed title]",
+      "title": "[ALWAYS reframed to align with target role]",
       "company": "[Company with industry context in parentheses when helpful]",
       "dates": "[Unchanged dates]",
       "bullets": [
@@ -129,11 +129,15 @@ COMPANY CONTEXTUALIZATION — Add industry descriptors in parentheses:
 - For Indeed.com: "(Enterprise Technical Documentation)"
 Choose the contextualization that creates the strongest bridge to the target employer.
 
-TITLE REFRAMING — You may strategically reframe job titles to create narrative alignment:
+TITLE REFRAMING — ALWAYS reframe every job title to create narrative alignment with the target role. This is NOT optional. Each title should make a recruiter immediately see the connection to the job they're hiring for:
 - "Contract/Proposal Analyst" → "Technical Writer & Emergency Preparedness Documentation Lead" (for FEMA)
+- "Contract/Proposal Analyst" → "Contract Proposal Specialist | Federal Compliance" (for defense)
+- "Contract/Proposal Analyst" → "Senior Proposal & Marketing Manager" (for marketing-heavy roles)
 - "Technical Writer" → "Technical Writer & Federal Program Analyst" (for federal roles)
 - "IT Technical Writer" → "Technical Documentation Specialist" (for enterprise roles)
-RULES: Never fabricate level changes (Junior→Senior). Never invent functions not performed. Dates always accurate.
+- "Cybersecurity Technical Writer" → "Cybersecurity Documentation & Compliance Analyst" (for security roles)
+- "Contract Technical Writer" → "Content Strategist & Knowledge Management Specialist" (for content roles)
+Reframe EVERY title for EVERY role in the experience section. The only limits: never fabricate level changes (Junior→Senior), never invent entirely new functions not performed, dates always accurate.
 
 BULLETS — Every bullet MUST follow this format:
 "**Bold action verb + what** context/how/tool with JD-specific outcome."
@@ -165,15 +169,16 @@ Example: "Public Trust Clearable (U.S. Citizen) · Proficient in Adobe Acrobat P
 ═══ CRITICAL RULES ═══
 
 1. Employment dates are NEVER changed
-2. Core company names are never changed (but can add context in parentheses)
+2. Core company names are never changed (but ALWAYS add context in parentheses)
 3. Degree and school are never changed
-4. Every element must earn its place by connecting to the JD
-5. The resume must read like Annabel wrote it specifically for this posting
-6. Mirror the JD's language so closely that the resume feels like a direct response to the requirements
-7. Be AGGRESSIVE — this resume must guarantee an interview`;
+4. Job titles in experience section MUST be reframed for every role — never leave them as-is
+5. Every element must earn its place by connecting to the JD
+6. The resume must read like Annabel wrote it specifically for this posting
+7. Mirror the JD's language so closely that the resume feels like a direct response to the requirements
+8. Be AGGRESSIVE — this resume must guarantee an interview`;
 
 const TAILOR_USER = (job, master) =>
-  `MASTER RESUME:\n${JSON.stringify(master)}\n\nTARGET ROLE: ${job.title} at ${job.company}\nLOCATION: ${job.location}\n\nFULL JOB DESCRIPTION:\n${job.description}\n\nAnalyze the JD deeply. Identify every requirement, tool, framework, standard, and cultural signal. Then build a resume that makes Annabel look like the only candidate who could have written this application. Return ONLY the JSON, starting with {`;
+  `MASTER RESUME (raw material — titles, bullets, skills are all yours to rewrite):\n${JSON.stringify(master)}\n\nTARGET ROLE: ${job.title} at ${job.company}\nLOCATION: ${job.location}\n\nFULL JOB DESCRIPTION:\n${job.description}\n\nCRITICAL REMINDER: You MUST reframe every job title in the experience section to align with the "${job.title}" role. The original titles like "Contract/Proposal Analyst", "IT Technical Writer", "Contract Technical Writer" etc. are her ACTUAL titles but for the resume output you MUST rewrite them to create narrative alignment with this specific JD. For example, if the target is a Technical Writer role at FEMA, "Contract/Proposal Analyst" becomes "Technical Writer & Emergency Preparedness Documentation Lead", "IT Technical Writer" becomes "Technical Documentation & Knowledge Management Specialist", etc. Do NOT return the original titles unchanged.\n\nAlso MUST: add company context in parentheses (e.g. "Karthik Consulting LLC (Environmental Protection Agency)"), categorize competencies into 4-5 groups, use **bold opening** on every bullet.\n\nReturn ONLY the JSON, starting with {`;
 
 const TITLE_GROUPS = [
   { label: "Highest Probability (80–95%)", color: "#4ADE80", titles: ["Technical Writer","Technical Writer II","Documentation Specialist","Content Developer","Content Strategist","Knowledge Management Specialist","Technical Communications Specialist","User Experience Writer","API Documentation Writer","Software Documentation Writer"]},
