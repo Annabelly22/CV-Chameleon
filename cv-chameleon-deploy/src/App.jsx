@@ -181,6 +181,25 @@ const TAILOR_USER = (job, master) =>
   `MASTER RESUME (raw material — titles, bullets, skills are all yours to rewrite):\n${JSON.stringify(master)}\n\nTARGET ROLE: ${job.title} at ${job.company}\nLOCATION: ${job.location}\n\nFULL JOB DESCRIPTION:\n${job.description}\n\nCRITICAL REMINDER: You MUST reframe every job title in the experience section to align with the "${job.title}" role. The original titles like "Contract/Proposal Analyst", "IT Technical Writer", "Contract Technical Writer" etc. are her ACTUAL titles but for the resume output you MUST rewrite them to create narrative alignment with this specific JD. For example, if the target is a Technical Writer role at FEMA, "Contract/Proposal Analyst" becomes "Technical Writer & Emergency Preparedness Documentation Lead", "IT Technical Writer" becomes "Technical Documentation & Knowledge Management Specialist", etc. Do NOT return the original titles unchanged.\n\nAlso MUST: add company context in parentheses (e.g. "Karthik Consulting LLC (Environmental Protection Agency)"), categorize competencies into 4-5 groups, use **bold opening** on every bullet.\n\nReturn ONLY the JSON, starting with {`;
 
 const TITLE_GROUPS = [
+  { label: "AI & Forward Deployed (2026)", color: "#00FFF9", titles: [
+    "AI Technical Writer",
+    "Prompt Engineer",
+    "AI Documentation Specialist",
+    "AI Content Strategist",
+    "AI Policy & Compliance Analyst",
+    "LLM Evaluation Specialist",
+    "AI Knowledge Manager",
+    "AI Implementation Specialist",
+    "AI Solutions Consultant",
+    "Technical AI Program Manager",
+    "AI Product Analyst",
+    "AI Customer Success Manager",
+    "AI Onboarding Specialist",
+    "Forward Deployed AI Engineer",
+    "AI Solutions Engineer",
+    "AI Integration Engineer",
+    "AI Research Analyst"
+  ]},
   { label: "Highest Probability (80–95%)", color: "#4ADE80", titles: ["Technical Writer","Technical Writer II","Documentation Specialist","Content Developer","Content Strategist","Knowledge Management Specialist","Technical Communications Specialist","User Experience Writer","API Documentation Writer","Software Documentation Writer"]},
   { label: "IT Support & Analysis", color: "#7EB5F7", titles: ["IT Support Specialist","Help Desk Analyst II","Help Desk Analyst III","System Documentation Analyst","IT Business Analyst","Technical Support Specialist","Desktop Support Technician","Network Support Technician"]},
   { label: "Federal & Government Contractor", color: "#C084FC", titles: ["Technical Writer (Cleared)","Documentation Specialist (Federal)","IT Support Analyst (Government)","Cybersecurity Documentation Specialist","Compliance Documentation Specialist"]},
@@ -198,7 +217,18 @@ const LOCATION_OPTIONS = [
   { label: "Austin", emoji: "🔥" },{ label: "Houston", emoji: "💕" },{ label: "Dallas", emoji: "❤️" },
   { label: "Remote", emoji: "😌" },{ label: "Contract", emoji: "🤑" },{ label: "Government", emoji: "💫" },{ label: "BuiltIn", emoji: "🤌🏽" },
 ];
-const DEFAULT_TITLES = ["Technical Writer","Documentation Specialist","Content Strategist","Knowledge Management Specialist","Technical Communications Specialist","API Documentation Writer","Compliance Documentation Specialist","RFP Manager","Technical Program Manager (TPM)","Implementation Project Manager"];
+const DEFAULT_TITLES = [
+  "AI Technical Writer",
+  "Prompt Engineer",
+  "AI Documentation Specialist",
+  "AI Content Strategist",
+  "AI Implementation Specialist",
+  "Technical Writer",
+  "Documentation Specialist",
+  "Knowledge Management Specialist",
+  "AI Solutions Consultant",
+  "Technical AI Program Manager"
+];
 const DEFAULT_LOCATIONS = ["Austin","Dallas","Remote"];
 
 const callClaude = async (system, userMsg, maxTokens = 4096) => {
@@ -306,7 +336,6 @@ export default function App() {
       const jsonStart = clean.indexOf("{");
       if (jsonStart === -1) throw new Error("No JSON in response");
       const parsed = JSON.parse(clean.slice(jsonStart));
-      // Ensure filename exists
       if (!parsed.filename) {
         const co = (job.company||"Co").replace(/[^a-z0-9]/gi,"_").slice(0,20);
         const role = (job.title||"Role").replace(/[^a-z0-9]/gi,"_").slice(0,25);
@@ -362,64 +391,46 @@ export default function App() {
     if (!jsPDFReady || !window.jspdf) { alert("PDF loading, try again in a moment."); return; }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "mm", format: "letter" });
-    const pW = 215.9, m = 12.7, cW = pW - m * 2; // 0.5in margins
+    const pW = 215.9, m = 12.7, cW = pW - m * 2;
     let y = 14;
 
-    // Colors from skill spec
-    const C_HEADER = [26, 26, 26];     // #1a1a1a
-    const C_ACCENT = [44, 90, 160];    // #2c5aa0
-    const C_BODY = [42, 42, 42];       // #2a2a2a
-    const C_SEC = [74, 74, 74];        // #4a4a4a
-    const C_BG = [232, 240, 248];      // #e8f0f8
+    const C_HEADER = [26, 26, 26];
+    const C_ACCENT = [44, 90, 160];
+    const C_BODY = [42, 42, 42];
+    const C_SEC = [74, 74, 74];
+    const C_BG = [232, 240, 248];
 
     const checkPage = (need) => { if (y + need > 264) { doc.addPage(); y = 14; } };
 
-    // Helper: render bullet text with bold opening
     const renderBullet = (text, x, maxW) => {
       const boldMatch = text.match(/^\*\*(.*?)\*\*\s*(.*)/);
       if (boldMatch) {
         const boldPart = boldMatch[1];
         const rest = boldMatch[2];
-        const full = `\u2022 ${boldPart} ${rest}`;
-        // We'll render the whole thing as normal text but bold the first part
-        // jsPDF limitation: split first, then render line by line with mixed fonts
         const testLines = doc.setFont("helvetica","normal").setFontSize(9.5).splitTextToSize(`\u2022 ${boldPart} ${rest}`, maxW);
-        
-        // Simple approach: render full text, then overlay bold portion
-        // Better approach: render bold part, measure, continue with normal
         const bulletStr = "\u2022 ";
         const bulletW = doc.getStringUnitWidth(bulletStr) * 9.5 / doc.internal.scaleFactor;
-        
         checkPage(testLines.length * 4.2 + 2);
-        
-        // Render line by line
-        let remaining = `${boldPart} ${rest}`;
-        let lineX = x;
         let isFirstLine = true;
         let boldRemaining = boldPart.length;
-        
         for (const line of testLines) {
           let lineText = line;
+          let lineX = x;
           if (isFirstLine) {
-            // Draw bullet
             doc.setFont("helvetica","normal").setFontSize(9.5).setTextColor(...C_BODY);
             doc.text("\u2022 ", lineX, y);
-            lineText = line.substring(2); // Remove "• "
+            lineText = line.substring(2);
             lineX = x + bulletW;
           } else {
             lineX = x + 2;
           }
-          
           if (boldRemaining > 0) {
-            // Part of this line is bold
             const charsInLine = lineText.length;
             const boldChars = Math.min(boldRemaining, charsInLine);
             const boldText = lineText.substring(0, boldChars);
             const normalText = lineText.substring(boldChars);
-            
             doc.setFont("helvetica","bold").setFontSize(9.5).setTextColor(...C_HEADER);
             doc.text(boldText, lineX, y);
-            
             if (normalText) {
               const boldW = doc.getStringUnitWidth(boldText) * 9.5 / doc.internal.scaleFactor;
               doc.setFont("helvetica","normal").setFontSize(9.5).setTextColor(...C_BODY);
@@ -430,13 +441,11 @@ export default function App() {
             doc.setFont("helvetica","normal").setFontSize(9.5).setTextColor(...C_BODY);
             doc.text(lineText, lineX, y);
           }
-          
           y += 4.2;
           isFirstLine = false;
         }
         y += 1;
       } else {
-        // No bold markers — render as plain bullet
         const lines = doc.setFont("helvetica","normal").setFontSize(9.5).splitTextToSize(`\u2022 ${text}`, maxW);
         checkPage(lines.length * 4.2 + 2);
         doc.setTextColor(...C_BODY);
@@ -445,7 +454,6 @@ export default function App() {
       }
     };
 
-    // Section header with background
     const sectionHeader = (title) => {
       checkPage(14);
       y += 3;
@@ -457,30 +465,25 @@ export default function App() {
       y += 8;
     };
 
-    // ── NAME ──
     doc.setFont("helvetica","bold").setFontSize(18).setTextColor(...C_HEADER);
     doc.text(r.name || "Annabel Otutu", pW / 2, y, { align: "center" });
     y += 5;
 
-    // ── HEADER TITLE ──
     if (r.headerTitle) {
       doc.setFont("helvetica","normal").setFontSize(11).setTextColor(...C_SEC);
       doc.text(r.headerTitle, pW / 2, y, { align: "center" });
       y += 5;
     }
 
-    // ── CONTACT ──
     doc.setFont("helvetica","normal").setFontSize(9).setTextColor(...C_SEC);
     doc.text(r.contact || "Dallas, TX  \u00B7  linkedin.com/in/annabel-otutu  \u00B7  annabellotutu@gmail.com", pW / 2, y, { align: "center" });
     y += 3;
 
-    // Divider
     doc.setDrawColor(...C_ACCENT);
     doc.setLineWidth(0.6);
     doc.line(m, y, pW - m, y);
     y += 6;
 
-    // ── SUMMARY ──
     if (r.summary) {
       sectionHeader("Summary");
       const sumLines = doc.setFont("helvetica","normal").setFontSize(9.5).splitTextToSize(r.summary, cW - 6);
@@ -489,7 +492,6 @@ export default function App() {
       y += sumLines.length * 4.5 + 4;
     }
 
-    // ── CORE COMPETENCIES ──
     const comps = r.competencies || [];
     if (comps.length > 0) {
       sectionHeader("Core Competencies");
@@ -497,24 +499,18 @@ export default function App() {
         checkPage(8);
         const label = `${comp.category}: `;
         const items = (comp.items || []).join(", ") + ".";
-        
         doc.setFont("helvetica","bold").setFontSize(9.5).setTextColor(...C_HEADER);
         const labelW = doc.getStringUnitWidth(label) * 9.5 / doc.internal.scaleFactor;
         doc.text(label, m + 3, y);
-        
-        // Wrap the items text
         const itemsMaxW = cW - 6 - labelW;
         const firstLineItems = doc.setFont("helvetica","normal").setFontSize(9.5).splitTextToSize(items, itemsMaxW);
         doc.setTextColor(...C_BODY);
-        
         if (firstLineItems.length === 1) {
           doc.text(items, m + 3 + labelW, y);
           y += 5;
         } else {
-          // First line next to label
           doc.text(firstLineItems[0], m + 3 + labelW, y);
           y += 4.5;
-          // Remaining lines full width
           if (firstLineItems.length > 1) {
             const rest = items.substring(firstLineItems[0].length).trim();
             const restLines = doc.splitTextToSize(rest, cW - 6);
@@ -525,7 +521,6 @@ export default function App() {
       });
       y += 2;
     } else if (r.skills && r.skills.length > 0) {
-      // Fallback: flat skills array (backward compatibility)
       sectionHeader("Core Competencies");
       doc.setFont("helvetica","normal").setFontSize(9.5).setTextColor(...C_BODY);
       for (let i = 0; i < r.skills.length; i += 3) {
@@ -536,28 +531,21 @@ export default function App() {
       y += 2;
     }
 
-    // ── PROFESSIONAL EXPERIENCE ──
     if (r.experience?.length) {
       sectionHeader("Professional Experience");
       r.experience.forEach(j => {
         checkPage(18);
-        // Job title
         doc.setFont("helvetica","bold").setFontSize(10.5).setTextColor(...C_HEADER);
         doc.text(j.title || "", m + 1, y);
         y += 4.5;
-        // Company + dates
         doc.setFont("helvetica","italic").setFontSize(9.5).setTextColor(...C_ACCENT);
         doc.text(`${j.company || ""}  \u00B7  ${j.dates || ""}`, m + 1, y);
         y += 5;
-        // Bullets
-        (j.bullets || []).forEach(b => {
-          renderBullet(b, m + 3, cW - 6);
-        });
+        (j.bullets || []).forEach(b => { renderBullet(b, m + 3, cW - 6); });
         y += 3;
       });
     }
 
-    // ── EDUCATION ──
     if (r.education?.length) {
       sectionHeader("Education");
       r.education.forEach(e => {
@@ -576,7 +564,6 @@ export default function App() {
       });
     }
 
-    // ── ADDITIONAL QUALIFICATIONS ──
     if (r.additionalQualifications) {
       sectionHeader("Additional Qualifications");
       const aqLines = doc.setFont("helvetica","normal").setFontSize(9.5).splitTextToSize(r.additionalQualifications, cW - 6);
