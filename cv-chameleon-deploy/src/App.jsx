@@ -69,7 +69,7 @@ Return ONLY valid JSON starting with { matching this exact schema:
 {
   "name": "Annabel Otutu",
   "headerTitle": "[Strategic title matching target role | Specialization]",
-  "contact": "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  annabelotutu5@gmail.com",
+  "contact": "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
   "summary": "[3-4 sentences using employer's own language]",
   "competencies": [
     { "category": "[Category from JD]", "items": ["Item1", "Item2", "Item3", "Item4"] },
@@ -476,7 +476,7 @@ export default function App() {
     }
 
     doc.setFont("helvetica","normal").setFontSize(9).setTextColor(...C_SEC);
-    doc.text(r.contact || "Dallas, TX  \u00B7  linkedin.com/in/annabel-otutu  \u00B7  annabellotutu@gmail.com", pW / 2, y, { align: "center" });
+    doc.text(r.contact || "Dallas, TX  \u00B7  linkedin.com/in/annabel-otutu  \u00B7  anabelotutu5@gmail.com", pW / 2, y, { align: "center" });
     y += 3;
 
     doc.setDrawColor(...C_ACCENT);
