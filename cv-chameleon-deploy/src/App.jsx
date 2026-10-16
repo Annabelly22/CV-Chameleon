@@ -131,30 +131,53 @@ const searchJobs = async (titles, locations) => {
   return data.jobs || [];
 };
 
-// Turso Storage API
-const saveToTurso = async (type, data) => {
+// Storage API with localStorage fallback for offline PWA
+const saveToStorage = async (type, data) => {
+  // Try Turso first
   try {
     const res = await fetch("/api/storage", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, data })
     });
-    return res.ok;
+    if (res.ok) return true;
+  } catch {}
+  // Fallback to localStorage
+  try {
+    const key = `cv_${type}`;
+    const existing = JSON.parse(localStorage.getItem(key) || "[]");
+    existing.unshift({ ...data, id: Date.now(), created_at: new Date().toISOString() });
+    localStorage.setItem(key, JSON.stringify(existing.slice(0, 100)));
+    return true;
   } catch { return false; }
 };
 
-const loadFromTurso = async (type) => {
+const loadFromStorage = async (type) => {
+  // Try Turso first
   try {
     const res = await fetch(`/api/storage?type=${type}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.data || [];
+    if (res.ok) {
+      const data = await res.json();
+      return data.resumes || data.activity || data.preferences || [];
+    }
+  } catch {}
+  // Fallback to localStorage
+  try {
+    return JSON.parse(localStorage.getItem(`cv_${type}`) || "[]");
   } catch { return []; }
 };
 
-const deleteFromTurso = async (id) => {
+const deleteFromStorage = async (id) => {
+  // Try Turso first
   try {
-    await fetch(`/api/storage?id=${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/storage?id=${id}`, { method: "DELETE" });
+    if (res.ok) return;
+  } catch {}
+  // Fallback: remove from localStorage (resumes)
+  try {
+    const resumes = JSON.parse(localStorage.getItem("cv_resumes") || "[]");
+    const filtered = resumes.filter(r => r.id !== id);
+    localStorage.setItem("cv_resumes", JSON.stringify(filtered));
   } catch {}
 };
 
@@ -248,14 +271,14 @@ export default function App() {
 
   // Load saved resumes from Turso
   useEffect(() => {
-    loadFromTurso("resumes").then(data => {
+    loadFromStorage("resumes").then(data => {
       if (Array.isArray(data)) setSavedResumes(data);
     });
   }, []);
 
   // Load activity log from Turso
   useEffect(() => {
-    loadFromTurso("activity").then(data => {
+    loadFromStorage("activity").then(data => {
       if (Array.isArray(data) && data.length > 0) {
         setLog(data.map(d => ({ msg: d.message, type: d.type, time: new Date(d.timestamp).toLocaleTimeString("en-US", { hour12: false }) })));
       } else {
@@ -270,7 +293,7 @@ export default function App() {
     const icons = { info: "›", success: "✓", error: "✗", loading: "⟳" };
     const entry = { msg, type, icon: icons[type], time: new Date().toLocaleTimeString("en-US", { hour12: false }) };
     setLog(prev => [...prev, entry]);
-    saveToTurso("activity", { message: msg, type });
+    saveToStorage("activity", { message: msg, type });
   };
 
   const filteredRoles = selectedCategory === "All" ? BRIDGE_ROLES : BRIDGE_ROLES.filter(r => r.c === selectedCategory);
@@ -351,16 +374,16 @@ export default function App() {
   };
 
   const saveResume = async (resume) => {
-    const success = await saveToTurso("resume", { filename: resume.filename, ...resume });
+    const success = await saveToStorage("resume", { filename: resume.filename, ...resume });
     if (success) {
       addLog(`Saved: ${resume.filename}`, "success");
-      const updated = await loadFromTurso("resumes");
+      const updated = await loadFromStorage("resumes");
       setSavedResumes(updated);
     }
   };
 
   const deleteSavedResume = async (id) => {
-    await deleteFromTurso(id);
+    await deleteFromStorage(id);
     setSavedResumes(prev => prev.filter(r => r.id !== id));
     addLog("Resume deleted", "info");
   };
