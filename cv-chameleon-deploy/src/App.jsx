@@ -146,9 +146,8 @@ KEY DIFFERENTIATORS TO EMPHASIZE:
 5. Cybersecurity degree from Champlain College — academic foundation
 
 REMOTE POSITIONING:
-- Location: Abuja, Nigeria (UTC+1) — covers US Eastern morning through EU close
-- EOR compatible: Deel, Remote.com, Oyster all operate in Nigeria
-- No US work authorization needed — contractor or EOR arrangements
+- Available for remote work
+- Do NOT include specific location, timezone, or EOR details in resume
 
 ═══ OUTPUT SCHEMA ═══
 
@@ -156,7 +155,7 @@ Return ONLY valid JSON:
 {
   "name": "Annabel Otutu",
   "headerTitle": "[Strategic title matching target role | Specialization]",
-  "contact": "Abuja, Nigeria (UTC+1)  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
+  "contact": "linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
   "summary": "[3-4 sentences positioning for commercial/international, NOT federal]",
   "competencies": [
     { "category": "[Category from JD]", "items": ["Item1", "Item2", "Item3", "Item4"] }
@@ -171,7 +170,7 @@ Return ONLY valid JSON:
   ],
   "education": [{ "degree": "Bachelor of Science — Computer Networking and Cybersecurity", "school": "Champlain College", "focus": "" }],
   "workSamples": ["NIST RMF AC-2 Control Documentation", "SOC 2 CC6.1 Control Response", "ISO 27001 Policy Documentation"],
-  "remoteReadiness": "Based in Abuja, Nigeria (UTC+1). Available for contractor or EOR arrangements via Deel, Remote.com, or Oyster.",
+  "remoteReadiness": "",
   "filename": "Annabel_Otutu_[Company]_[Role].pdf"
 }
 
@@ -192,9 +191,9 @@ For AI CONTRACT roles (Mercor, micro1, Turing):
 
 ═══ SUMMARY FORMULA ═══
 
-For Compliance roles: "Technical compliance analyst with [X] years producing auditor-ready documentation for [SOC 2/ISO 27001/NIST]. Proven ability to interview engineers, translate controls into evidence, and automate evidence collection in Python. Work samples available: [list]. Based in Nigeria, available via EOR."
+For Compliance roles: "Technical compliance analyst with [X] years producing auditor-ready documentation for [SOC 2/ISO 27001/NIST]. Proven ability to interview engineers, translate controls into evidence, and automate evidence collection in Python. Work samples available: [list]."
 
-For Writing roles: "Technical writer specializing in [security/compliance/API] documentation with enterprise experience at Microsoft, Indeed, and EPA contractor work. Portfolio includes [samples]. Remote-ready from UTC+1."
+For Writing roles: "Technical writer specializing in [security/compliance/API] documentation with enterprise experience at Microsoft, Indeed, and EPA contractor work. Portfolio includes [samples]."
 
 For AI Contract roles: "Finance and code specialist with production MQL5 systems, Python automation, and Claude API integrations. Shipped: CV Chameleon, ROOT VI, Watchman EA Manager. Compliance domain expertise in NIST, SOC 2, ISO 27001."
 
@@ -202,14 +201,14 @@ For AI Contract roles: "Finance and code specialist with production MQL5 systems
 
 1. NEVER mention Public Trust, security clearance, or federal preference
 2. ALWAYS include work samples section — this is her key differentiator
-3. ALWAYS include remote readiness statement with timezone and EOR compatibility
+3. Do NOT include location, timezone, or EOR details in resume output
 4. Position Python automation as a core skill, not an add-on
 5. For AI platforms, lead with code and trading systems experience
 6. Employment dates NEVER change
 7. Be aggressive — she needs this job`;
 
 const TAILOR_USER = (job, master) =>
-  `MASTER RESUME:\n${JSON.stringify(master)}\n\nTARGET ROLE: ${job.title} at ${job.company}\nLOCATION: ${job.location}\nCATEGORY: ${job.category || "Commercial"}\n\nJOB DESCRIPTION:\n${job.description}\n\nIMPORTANT: This application is for a REMOTE role from Nigeria. Do NOT position for federal/GovCon. Emphasize:\n1. Work samples (NIST RMF, SOC 2, ISO 27001)\n2. Python automation at Parkland\n3. Shipped AI products\n4. Remote readiness (UTC+1, EOR compatible)\n\nReturn ONLY the JSON.`;
+  `MASTER RESUME:\n${JSON.stringify(master)}\n\nTARGET ROLE: ${job.title} at ${job.company}\nLOCATION: ${job.location}\nCATEGORY: ${job.category || "Commercial"}\n\nJOB DESCRIPTION:\n${job.description}\n\nIMPORTANT: This application is for a REMOTE role. Do NOT position for federal/GovCon. Do NOT include location/timezone/EOR details. Emphasize:\n1. Work samples (NIST RMF, SOC 2, ISO 27001)\n2. Python automation at Parkland\n3. Shipped AI products\n\nReturn ONLY the JSON.`;
 
 const STORAGE_KEYS = {
   LOG: "cv_chameleon_log",
@@ -476,7 +475,7 @@ export default function App() {
       y += 5;
     }
     doc.setFont("helvetica","normal").setFontSize(9).setTextColor(...C_SEC);
-    doc.text(r.contact || "Abuja, Nigeria (UTC+1)  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com", pW / 2, y, { align: "center" });
+    doc.text(r.contact || "linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com", pW / 2, y, { align: "center" });
     y += 3;
     doc.setDrawColor(...C_ACCENT).setLineWidth(0.6).line(m, y, pW - m, y);
     y += 6;
@@ -538,12 +537,7 @@ export default function App() {
       });
     }
 
-    if (r.remoteReadiness) {
-      sectionHeader("Remote Readiness");
-      doc.setFont("helvetica","normal").setFontSize(9.5).setTextColor(...C_BODY);
-      doc.text(r.remoteReadiness, m + 3, y);
-    }
-
+    
     doc.save(r.filename || "Annabel_Otutu_Resume.pdf");
     addLog(`Downloaded: ${r.filename}`, "success");
   };
@@ -579,8 +573,7 @@ export default function App() {
                 {previewResume.workSamples?.length > 0 && <div style={{marginBottom:16}}><div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,textTransform:"uppercase"}}>Work Samples</div><div style={{paddingLeft:8}}>{previewResume.workSamples.join("  ·  ")}</div></div>}
                 {previewResume.competencies?.length > 0 && <div style={{marginBottom:16}}><div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,textTransform:"uppercase"}}>Core Competencies</div>{previewResume.competencies.map((c,i) => <div key={i} style={{paddingLeft:8,marginBottom:4}}><strong>{c.category}:</strong> {c.items?.join(", ")}.</div>)}</div>}
                 {previewResume.experience?.length > 0 && <div style={{marginBottom:16}}><div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,textTransform:"uppercase"}}>Professional Experience</div>{previewResume.experience.map((exp,i) => <div key={i} style={{marginBottom:12,paddingLeft:8}}><div style={{fontWeight:700,fontSize:13}}>{exp.title}</div><div style={{color:"#2C5A9A",fontStyle:"italic",marginBottom:4}}>{exp.company}  ·  {exp.dates}</div><ul style={{margin:0,paddingLeft:18}}>{exp.bullets?.map((b,j) => <li key={j} style={{marginBottom:3}}>{renderBoldText(b)}</li>)}</ul></div>)}</div>}
-                {previewResume.remoteReadiness && <div><div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,textTransform:"uppercase"}}>Remote Readiness</div><div style={{paddingLeft:8}}>{previewResume.remoteReadiness}</div></div>}
-              </div>
+                              </div>
             </div>
             <div className="modal-footer">
               <button className="bgh" onClick={() => setPreviewResume(null)}>CANCEL</button>

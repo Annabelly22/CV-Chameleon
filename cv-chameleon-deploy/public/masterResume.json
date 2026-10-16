@@ -1,6 +1,6 @@
 {
   "name": "Annabel Otutu",
-  "contact": "Abuja, Nigeria (UTC+1)  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
+  "contact": "linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
   "positioning": "Technical Compliance Analyst — NIST SP 800-37, SOC 2, ISO 27001 — who interviews engineers, produces auditor-ready documentation, and automates the pipeline in Python.",
   "summary": "",
   "skills": [
@@ -126,9 +126,6 @@
     "Watchman EA Manager — MQL5 expert advisor monitoring system"
   ],
   "remoteReadiness": {
-    "location": "Abuja, Nigeria",
-    "timezone": "UTC+1 (covers US Eastern morning through EU close)",
-    "eorCompatible": ["Deel", "Remote.com", "Oyster"],
-    "citizenship": "Nigerian (no US work authorization required for remote contractor roles)"
+    "available": "Remote work ready"
   }
 }
