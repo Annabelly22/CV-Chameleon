@@ -1,0 +1,107 @@
+{
+  "name": "Annabel Otutu",
+  "contact": "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
+  "summary": "",
+  "skills": [
+    "Technical Writing",
+    "Confluence & Jira",
+    "NIST SP 800-37",
+    "API Documentation",
+    "CMS & SEO",
+    "Cybersecurity Compliance",
+    "SORN & PIA Development",
+    "Process Improvement",
+    "HTML Scripting",
+    "Content Strategy",
+    "Knowledge Management",
+    "Python Automation",
+    "Lucidchart",
+    "DevOps Documentation",
+    "Microsoft Teams",
+    "SharePoint",
+    "Section 508 Compliance",
+    "Adobe Acrobat Pro",
+    "Federal Documentation Standards",
+    "Version Control",
+    "SOPs & Policy Writing",
+    "Stakeholder Interviews",
+    "Agile / Sprint Methodology",
+    "Style Guide Adherence"
+  ],
+  "experience": [
+    {
+      "title": "Contract/Proposal Analyst",
+      "company": "Parkland Health",
+      "dates": "2024 – Present",
+      "bullets": [
+        "Built automated Python/VBScript tools for board document processing, consent agenda generation, and diversity data extraction",
+        "Manage contract documentation lifecycle ensuring regulatory alignment across board-level governance reporting",
+        "Develop and maintain documentation frameworks supporting proposal workflows and compliance operations",
+        "Coordinate with subject matter experts and stakeholders to validate accuracy and currency of all documentation",
+        "Maintain version control and manage content updates across shared platforms including SharePoint and Teams"
+      ]
+    },
+    {
+      "title": "Technical Writer",
+      "company": "Karthik Consulting LLC (EPA — OISP/OMS)",
+      "dates": "Apr 2024 – Present",
+      "bullets": [
+        "Authored System of Records Notices (SORN) and Privacy Impact Assessments (PIA) per federal privacy regulations",
+        "Created Risk Management Reports quarterly in compliance with NIST SP 800-37 standards",
+        "Produced system configuration diagrams and process workflow documentation for EPA federal programs",
+        "Interviewed technical and functional stakeholders to validate and maintain documentation accuracy",
+        "Ensured all deliverables met federal writing standards and Section 508 accessibility requirements",
+        "Developed SOPs, policy papers, and needs assessments aligned with agency mission and compliance mandates"
+      ]
+    },
+    {
+      "title": "IT Technical Writer",
+      "company": "Indeed.com",
+      "dates": "Jun 2022 – Dec 2022",
+      "bullets": [
+        "Created wiki pages and onboarding documentation for engineers using Jira and Confluence",
+        "Built master documentation outline to streamline engineer training using Lucidchart and Agile sprints",
+        "Authored DevOps infrastructure documentation coordinating with software and IT operations teams",
+        "Managed content lifecycle and version control across shared knowledge management environments"
+      ]
+    },
+    {
+      "title": "Contract Technical Writer",
+      "company": "Cox Automotive Inc.",
+      "dates": "Nov 2022 – May 2023",
+      "bullets": [
+        "Authored and maintained customer-facing content on Cox.com and internal agent knowledge bases",
+        "Managed content lifecycle across multiple knowledge management platforms",
+        "Coordinated with SMEs via Microsoft Teams to ensure workflow and product documentation accuracy",
+        "Revised and edited technical content for grammar, clarity, consistency, tone, and formatting standards"
+      ]
+    },
+    {
+      "title": "Cybersecurity Technical Writer",
+      "company": "Microsoft",
+      "dates": "Aug 2021 – Jan 2022",
+      "bullets": [
+        "Supported the Halo Infinite security team with cybersecurity documentation quality control",
+        "Executed large-scale Confluence database cleanup and content audit ensuring accuracy and consistency",
+        "Collaborated with team of Technical Writers to ensure consistent documentation standards across initiatives",
+        "Reviewed documents for clarity, grammar, and alignment with internal style and formatting guidelines"
+      ]
+    },
+    {
+      "title": "IT Intern & Analyst",
+      "company": "The Leahy Center (LCDI)",
+      "dates": "Jan 2023 – Aug 2023",
+      "bullets": [
+        "Parsed server and endpoint logs to identify improper configurations",
+        "Troubleshot client networking issues ensuring optimal functionality",
+        "Conducted research on emerging technologies relevant to digital forensics and cybersecurity"
+      ]
+    }
+  ],
+  "education": [
+    {
+      "degree": "Bachelor of Science — Computer Networking and Cybersecurity",
+      "school": "Champlain College"
+    }
+  ]
+}

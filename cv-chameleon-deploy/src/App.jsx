@@ -1,58 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-
-const MASTER_RESUME = {
-  name: "Annabel Otutu",
-  contact: "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
-  summary: "",
-  skills: ["Technical Writing","Confluence & Jira","NIST SP 800-37","API Documentation","CMS & SEO","Cybersecurity Compliance","SORN & PIA Development","Process Improvement","HTML Scripting","Content Strategy","Knowledge Management","Python Automation","Lucidchart","DevOps Documentation","Microsoft Teams","SharePoint","Section 508 Compliance","Adobe Acrobat Pro","Federal Documentation Standards","Version Control","SOPs & Policy Writing","Stakeholder Interviews","Agile / Sprint Methodology","Style Guide Adherence"],
-  experience: [
-    { title: "Contract/Proposal Analyst", company: "Parkland Health", dates: "2024 – Present",
-      bullets: [
-        "Built automated Python/VBScript tools for board document processing, consent agenda generation, and diversity data extraction",
-        "Manage contract documentation lifecycle ensuring regulatory alignment across board-level governance reporting",
-        "Develop and maintain documentation frameworks supporting proposal workflows and compliance operations",
-        "Coordinate with subject matter experts and stakeholders to validate accuracy and currency of all documentation",
-        "Maintain version control and manage content updates across shared platforms including SharePoint and Teams"
-      ]},
-    { title: "Technical Writer", company: "Karthik Consulting LLC (EPA — OISP/OMS)", dates: "Apr 2024 – Present",
-      bullets: [
-        "Authored System of Records Notices (SORN) and Privacy Impact Assessments (PIA) per federal privacy regulations",
-        "Created Risk Management Reports quarterly in compliance with NIST SP 800-37 standards",
-        "Produced system configuration diagrams and process workflow documentation for EPA federal programs",
-        "Interviewed technical and functional stakeholders to validate and maintain documentation accuracy",
-        "Ensured all deliverables met federal writing standards and Section 508 accessibility requirements",
-        "Developed SOPs, policy papers, and needs assessments aligned with agency mission and compliance mandates"
-      ]},
-    { title: "IT Technical Writer", company: "Indeed.com", dates: "Jun 2022 – Dec 2022",
-      bullets: [
-        "Created wiki pages and onboarding documentation for engineers using Jira and Confluence",
-        "Built master documentation outline to streamline engineer training using Lucidchart and Agile sprints",
-        "Authored DevOps infrastructure documentation coordinating with software and IT operations teams",
-        "Managed content lifecycle and version control across shared knowledge management environments"
-      ]},
-    { title: "Contract Technical Writer", company: "Cox Automotive Inc.", dates: "Nov 2022 – May 2023",
-      bullets: [
-        "Authored and maintained customer-facing content on Cox.com and internal agent knowledge bases",
-        "Managed content lifecycle across multiple knowledge management platforms",
-        "Coordinated with SMEs via Microsoft Teams to ensure workflow and product documentation accuracy",
-        "Revised and edited technical content for grammar, clarity, consistency, tone, and formatting standards"
-      ]},
-    { title: "Cybersecurity Technical Writer", company: "Microsoft", dates: "Aug 2021 – Jan 2022",
-      bullets: [
-        "Supported the Halo Infinite security team with cybersecurity documentation quality control",
-        "Executed large-scale Confluence database cleanup and content audit ensuring accuracy and consistency",
-        "Collaborated with team of Technical Writers to ensure consistent documentation standards across initiatives",
-        "Reviewed documents for clarity, grammar, and alignment with internal style and formatting guidelines"
-      ]},
-    { title: "IT Intern & Analyst", company: "The Leahy Center (LCDI)", dates: "Jan 2023 – Aug 2023",
-      bullets: [
-        "Parsed server and endpoint logs to identify improper configurations",
-        "Troubleshot client networking issues ensuring optimal functionality",
-        "Conducted research on emerging technologies relevant to digital forensics and cybersecurity"
-      ]}
-  ],
-  education: [{ degree: "Bachelor of Science — Computer Networking and Cybersecurity", school: "Champlain College" }]
-};
+import { jsPDF } from "jspdf";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // STRATEGIC RESUME TAILORING SYSTEM PROMPT
@@ -125,7 +72,7 @@ COMPANY CONTEXTUALIZATION — Add industry descriptors in parentheses:
 - For Karthik Consulting: "(Environmental Protection Agency)" or "(Federal Systems)" or "(Federal Defense Contractor)" — choose what matches target employer
 - For Parkland Health: "(Healthcare Emergency Management)" for FEMA roles, plain for healthcare roles
 - For Microsoft: "(Enterprise Documentation)" for doc roles, plain for tech roles
-- For Cox Automotive: "(Enterprise Content & Knowledge Management)" 
+- For Cox Automotive: "(Enterprise Content & Knowledge Management)"
 - For Indeed.com: "(Enterprise Technical Documentation)"
 Choose the contextualization that creates the strongest bridge to the target employer.
 
@@ -231,6 +178,11 @@ const DEFAULT_TITLES = [
 ];
 const DEFAULT_LOCATIONS = ["Austin","Dallas","Remote"];
 
+const STORAGE_KEYS = {
+  LOG: "cv_chameleon_log",
+  MASTER_RESUME: "cv_chameleon_master_resume"
+};
+
 const callClaude = async (system, userMsg, maxTokens = 4096) => {
   const res = await fetch("/api/claude", {
     method: "POST",
@@ -279,14 +231,19 @@ const STYLES = `
   .fi{background:#0D1117;border:1px solid #2D3A4A;border-radius:5px;padding:8px 10px;color:#E6EDF3;font-family:'DM Mono','Courier New',monospace;font-size:11px;outline:none;width:100%;transition:border-color .2s}
   .fi:focus{border-color:#6A3DAA}
   .fi::placeholder{color:#2D3A4A}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal-content{background:#161B22;border:1px solid #3D5A80;border-radius:12px;max-width:800px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column}
+  .modal-header{padding:16px 20px;border-bottom:1px solid #21262D;display:flex;justify-content:space-between;align-items:center}
+  .modal-body{flex:1;overflow-y:auto;padding:20px}
+  .modal-footer{padding:16px 20px;border-top:1px solid #21262D;display:flex;gap:12px;justify-content:flex-end}
 `;
 
 export default function App() {
   const [phase, setPhase] = useState("idle");
   const [jobs, setJobs] = useState([]);
   const [tailoring, setTailoring] = useState({});
-  const [log, setLog] = useState([{ msg: "CV Chameleon ready — find jobs or paste a JD", type: "success", icon: "✓", time: new Date().toLocaleTimeString("en-US",{hour12:false}) }]);
-  const [jsPDFReady, setJsPDFReady] = useState(false);
+  const [log, setLog] = useState([]);
+  const [masterResume, setMasterResume] = useState(null);
   const [titles, setTitles] = useState(DEFAULT_TITLES);
   const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
   const [showTitleDropdown, setShowTitleDropdown] = useState(false);
@@ -296,20 +253,71 @@ export default function App() {
   const [pasteLocation, setPasteLocation] = useState("");
   const [pasteJD, setPasteJD] = useState("");
   const [pasting, setPasting] = useState(false);
+  const [previewResume, setPreviewResume] = useState(null);
+  const [showResumeEditor, setShowResumeEditor] = useState(false);
   const logRef = useRef(null);
 
+  // Load master resume from localStorage or fetch from JSON file
   useEffect(() => {
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    s.onload = () => setJsPDFReady(true);
-    document.head.appendChild(s);
+    const loadMasterResume = async () => {
+      const stored = localStorage.getItem(STORAGE_KEYS.MASTER_RESUME);
+      if (stored) {
+        try {
+          setMasterResume(JSON.parse(stored));
+          return;
+        } catch (e) {
+          console.error("Failed to parse stored master resume:", e);
+        }
+      }
+      try {
+        const res = await fetch("/masterResume.json");
+        if (res.ok) {
+          const data = await res.json();
+          setMasterResume(data);
+          localStorage.setItem(STORAGE_KEYS.MASTER_RESUME, JSON.stringify(data));
+        }
+      } catch (e) {
+        console.error("Failed to load master resume:", e);
+      }
+    };
+    loadMasterResume();
   }, []);
+
+  // Load activity log from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEYS.LOG);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setLog(parsed);
+          return;
+        }
+      } catch (e) {
+        console.error("Failed to parse stored log:", e);
+      }
+    }
+    setLog([{ msg: "CV Chameleon ready — find jobs or paste a JD", type: "success", icon: "✓", time: new Date().toLocaleTimeString("en-US",{hour12:false}) }]);
+  }, []);
+
+  // Persist log to localStorage whenever it changes
+  useEffect(() => {
+    if (log.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.LOG, JSON.stringify(log.slice(-100)));
+    }
+  }, [log]);
 
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [log]);
 
   const addLog = (msg, type = "info") => {
     const icons = { info: "›", success: "✓", error: "✗", loading: "⟳" };
     setLog(prev => [...prev, { msg, type, icon: icons[type], time: new Date().toLocaleTimeString("en-US",{hour12:false}) }]);
+  };
+
+  const clearLog = () => {
+    const initial = [{ msg: "Log cleared", type: "info", icon: "›", time: new Date().toLocaleTimeString("en-US",{hour12:false}) }];
+    setLog(initial);
+    localStorage.setItem(STORAGE_KEYS.LOG, JSON.stringify(initial));
   };
 
   const findJobs = async () => {
@@ -328,10 +336,14 @@ export default function App() {
   };
 
   const tailorResume = async (job) => {
+    if (!masterResume) {
+      addLog("Master resume not loaded yet", "error");
+      return;
+    }
     setTailoring(prev => ({ ...prev, [job.id]: "loading" }));
     addLog(`Tailoring for ${job.company}…`, "loading");
     try {
-      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, MASTER_RESUME), 4096);
+      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, masterResume), 4096);
       const clean = text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
       const jsonStart = clean.indexOf("{");
       if (jsonStart === -1) throw new Error("No JSON in response");
@@ -351,6 +363,10 @@ export default function App() {
 
   const tailorFromPaste = async () => {
     if (!pasteJD.trim() || !pasteTitle.trim() || !pasteCompany.trim()) return;
+    if (!masterResume) {
+      addLog("Master resume not loaded yet", "error");
+      return;
+    }
     setPasting(true);
     const job = {
       id: `paste_${Date.now()}`,
@@ -361,7 +377,7 @@ export default function App() {
     };
     addLog(`Tailoring pasted JD — ${job.company}…`, "loading");
     try {
-      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, MASTER_RESUME), 4096);
+      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, masterResume), 4096);
       const clean = text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
       const jsonStart = clean.indexOf("{");
       if (jsonStart === -1) throw new Error("No JSON in response");
@@ -388,8 +404,6 @@ export default function App() {
   // categorized competencies, header title, section backgrounds
   // ═══════════════════════════════════════════════════════════════════════
   const generatePDF = (r) => {
-    if (!jsPDFReady || !window.jspdf) { alert("PDF loading, try again in a moment."); return; }
-    const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "mm", format: "letter" });
     const pW = 215.9, m = 12.7, cW = pW - m * 2;
     let y = 14;
@@ -575,18 +589,164 @@ export default function App() {
     addLog(`Downloaded: ${r.filename}`, "success");
   };
 
+  const updateMasterResume = (newResume) => {
+    setMasterResume(newResume);
+    localStorage.setItem(STORAGE_KEYS.MASTER_RESUME, JSON.stringify(newResume));
+    addLog("Master resume updated", "success");
+  };
+
   const srcColor = { "LinkedIn":"#0A66C2","Indeed":"#2164F3","Builtin":"#6C47FF","Company Site":"#059669","Google Jobs":"#4285F4","Pasted":"#9333EA" };
+
+  // Render bold text helper for preview
+  const renderBoldText = (text) => {
+    const boldMatch = text.match(/^\*\*(.*?)\*\*\s*(.*)/);
+    if (boldMatch) {
+      return <><strong style={{color:"#E6EDF3"}}>{boldMatch[1]}</strong> {boldMatch[2]}</>;
+    }
+    return text;
+  };
 
   return (
     <div style={{minHeight:"100vh",background:"#0D1117",color:"#E6EDF3",fontFamily:"'DM Mono','Courier New',monospace"}}>
       <style>{STYLES}</style>
+
+      {/* Preview Modal */}
+      {previewResume && (
+        <div className="modal-overlay" onClick={() => setPreviewResume(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:"#E6EDF3"}}>RESUME PREVIEW</div>
+                <div style={{fontSize:10,color:"#7D8590",marginTop:2}}>{previewResume.filename}</div>
+              </div>
+              <button className="bgh" onClick={() => setPreviewResume(null)} style={{padding:"6px 12px"}}>✕ CLOSE</button>
+            </div>
+            <div className="modal-body" style={{background:"#0D1117"}}>
+              <div style={{background:"#fff",color:"#1a1a1a",padding:24,borderRadius:8,fontFamily:"Georgia, serif",fontSize:12,lineHeight:1.6}}>
+                <div style={{textAlign:"center",marginBottom:16}}>
+                  <div style={{fontSize:22,fontWeight:700,color:"#1a1a1a"}}>{previewResume.name}</div>
+                  {previewResume.headerTitle && <div style={{fontSize:13,color:"#4a4a4a",marginTop:4}}>{previewResume.headerTitle}</div>}
+                  <div style={{fontSize:11,color:"#666",marginTop:4}}>{previewResume.contact}</div>
+                </div>
+                <hr style={{border:"none",borderTop:"2px solid #2C5A9A",margin:"12px 0"}} />
+
+                {previewResume.summary && (
+                  <div style={{marginBottom:16}}>
+                    <div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,color:"#1a1a1a",textTransform:"uppercase",letterSpacing:".05em",border:"1px solid #2C5A9A",borderRadius:2}}>Summary</div>
+                    <div style={{paddingLeft:8}}>{previewResume.summary}</div>
+                  </div>
+                )}
+
+                {previewResume.competencies?.length > 0 && (
+                  <div style={{marginBottom:16}}>
+                    <div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,color:"#1a1a1a",textTransform:"uppercase",letterSpacing:".05em",border:"1px solid #2C5A9A",borderRadius:2}}>Core Competencies</div>
+                    <div style={{paddingLeft:8}}>
+                      {previewResume.competencies.map((comp, i) => (
+                        <div key={i} style={{marginBottom:4}}>
+                          <strong>{comp.category}:</strong> {comp.items?.join(", ")}.
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {previewResume.experience?.length > 0 && (
+                  <div style={{marginBottom:16}}>
+                    <div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,color:"#1a1a1a",textTransform:"uppercase",letterSpacing:".05em",border:"1px solid #2C5A9A",borderRadius:2}}>Professional Experience</div>
+                    {previewResume.experience.map((exp, i) => (
+                      <div key={i} style={{marginBottom:12,paddingLeft:8}}>
+                        <div style={{fontWeight:700,fontSize:13}}>{exp.title}</div>
+                        <div style={{color:"#2C5A9A",fontStyle:"italic",marginBottom:4}}>{exp.company}  ·  {exp.dates}</div>
+                        <ul style={{margin:0,paddingLeft:18}}>
+                          {exp.bullets?.map((b, j) => (
+                            <li key={j} style={{marginBottom:3}}>{renderBoldText(b)}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {previewResume.education?.length > 0 && (
+                  <div style={{marginBottom:16}}>
+                    <div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,color:"#1a1a1a",textTransform:"uppercase",letterSpacing:".05em",border:"1px solid #2C5A9A",borderRadius:2}}>Education</div>
+                    {previewResume.education.map((edu, i) => (
+                      <div key={i} style={{paddingLeft:8}}>
+                        <div style={{fontWeight:700}}>{edu.degree}</div>
+                        <div style={{color:"#2C5A9A"}}>{edu.school}</div>
+                        {edu.focus && <div style={{fontStyle:"italic",color:"#666"}}>{edu.focus}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {previewResume.additionalQualifications && (
+                  <div>
+                    <div style={{background:"#E8F0F8",padding:"6px 10px",marginBottom:8,fontSize:11,fontWeight:700,color:"#1a1a1a",textTransform:"uppercase",letterSpacing:".05em",border:"1px solid #2C5A9A",borderRadius:2}}>Additional Qualifications</div>
+                    <div style={{paddingLeft:8}}>{previewResume.additionalQualifications}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="bgh" onClick={() => setPreviewResume(null)}>CANCEL</button>
+              <button className="bg" onClick={() => { generatePDF(previewResume); setPreviewResume(null); }}>↓ DOWNLOAD PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Master Resume Editor Modal */}
+      {showResumeEditor && masterResume && (
+        <div className="modal-overlay" onClick={() => setShowResumeEditor(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{maxWidth:700}}>
+            <div className="modal-header">
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,color:"#E6EDF3"}}>EDIT MASTER RESUME</div>
+              <button className="bgh" onClick={() => setShowResumeEditor(false)} style={{padding:"6px 12px"}}>✕ CLOSE</button>
+            </div>
+            <div className="modal-body">
+              <div style={{fontSize:10,color:"#7D8590",marginBottom:12}}>Changes are saved to browser storage. Edit the JSON below:</div>
+              <textarea
+                className="jd-input"
+                rows={20}
+                defaultValue={JSON.stringify(masterResume, null, 2)}
+                id="resume-editor"
+                style={{fontFamily:"'DM Mono',monospace",fontSize:11}}
+              />
+            </div>
+            <div className="modal-footer">
+              <button className="bgh" onClick={() => {
+                localStorage.removeItem(STORAGE_KEYS.MASTER_RESUME);
+                fetch("/masterResume.json").then(r => r.json()).then(data => {
+                  setMasterResume(data);
+                  addLog("Reset to default master resume", "success");
+                });
+                setShowResumeEditor(false);
+              }}>RESET TO DEFAULT</button>
+              <button className="bg" onClick={() => {
+                try {
+                  const val = document.getElementById("resume-editor").value;
+                  const parsed = JSON.parse(val);
+                  updateMasterResume(parsed);
+                  setShowResumeEditor(false);
+                } catch (e) {
+                  alert("Invalid JSON: " + e.message);
+                }
+              }}>SAVE CHANGES</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{borderBottom:"1px solid #21262D",padding:"16px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <div style={{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:800,color:"#E6EDF3",letterSpacing:"-0.02em"}}>CV CHAMELEON <span style={{color:"#3D6B9A",fontSize:13,fontWeight:600}}>/ ANNABEL OTUTU</span></div>
           <div style={{fontSize:10,color:"#7D8590",marginTop:2,letterSpacing:".05em"}}>FIND · TAILOR · DOWNLOAD  ·  <span style={{color:"#4ADE80"}}>● LIVE</span></div>
         </div>
-        <span style={{fontSize:10,color:jsPDFReady?"#4ADE80":"#F59E0B",letterSpacing:".08em"}}>{jsPDFReady?"● PDF READY":"⟳ PDF LOADING"}</span>
+        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+          <button className="bgh" onClick={() => setShowResumeEditor(true)} style={{fontSize:10,padding:"6px 12px"}}>✎ EDIT RESUME</button>
+          <span style={{fontSize:10,color:masterResume?"#4ADE80":"#F59E0B",letterSpacing:".08em"}}>{masterResume?"● READY":"⟳ LOADING"}</span>
+        </div>
       </div>
 
       <div style={{padding:"20px 28px",maxWidth:1100,margin:"0 auto"}}>
@@ -607,7 +767,7 @@ export default function App() {
               <textarea className="jd-input" rows={12} placeholder="Paste the complete job description. Every responsibility, qualification, tool, standard, and cultural signal feeds directly into strategic positioning of every bullet, skill, and summary line…" value={pasteJD} onChange={e=>setPasteJD(e.target.value)} />
             </div>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <button className="bp2" onClick={tailorFromPaste} disabled={pasting||!pasteJD.trim()||!pasteTitle.trim()||!pasteCompany.trim()}>
+              <button className="bp2" onClick={tailorFromPaste} disabled={pasting||!pasteJD.trim()||!pasteTitle.trim()||!pasteCompany.trim()||!masterResume}>
                 {pasting?<span className="pulse">TAILORING…</span>:"⚡ TAILOR FROM JD"}
               </button>
               <button className="bgh" onClick={()=>{setShowPastePanel(false);setPasteTitle("");setPasteCompany("");setPasteLocation("");setPasteJD("");}}>CANCEL</button>
@@ -654,7 +814,7 @@ export default function App() {
             )}
           </div>
 
-          <button className="bp" onClick={()=>{setShowTitleDropdown(false);findJobs();}} disabled={phase==="searching"||!titles.length} style={{padding:"12px 32px",fontSize:13}}>
+          <button className="bp" onClick={()=>{setShowTitleDropdown(false);findJobs();}} disabled={phase==="searching"||!titles.length||!masterResume} style={{padding:"12px 32px",fontSize:13}}>
             {phase==="searching"?<span className="pulse">SEARCHING…</span>:"▶  FIND JOBS"}
           </button>
 
@@ -701,7 +861,8 @@ export default function App() {
                         {!state&&<button className="bg" onClick={()=>tailorResume(job)}>TAILOR</button>}
                         {state==="loading"&&<span className="pulse" style={{fontSize:11,color:"#F59E0B"}}>TAILORING…</span>}
                         {state==="error"&&<button className="bgh" onClick={()=>tailorResume(job)} style={{color:"#F87171",borderColor:"#4A2020"}}>RETRY</button>}
-                        {done&&<button className="bg" onClick={()=>generatePDF(state)} disabled={!jsPDFReady}>↓ PDF</button>}
+                        {done&&<button className="bp2" onClick={()=>setPreviewResume(state)} style={{padding:"6px 12px",fontSize:10}}>👁 PREVIEW</button>}
+                        {done&&<button className="bg" onClick={()=>generatePDF(state)}>↓ PDF</button>}
                         {job.source!=="Pasted"&&(job.applyOptions?.length>0?job.applyOptions:[{label:"APPLY",url:job.url}]).map((opt,idx)=>(
                           <a key={idx} href={opt.url} target="_blank" rel="noopener noreferrer" style={{fontSize:10,color:idx===0?"#3D6B9A":"#2D4A6A",textDecoration:"none",textTransform:"uppercase",letterSpacing:".05em"}}>{opt.label} →</a>
                         ))}
@@ -725,7 +886,7 @@ export default function App() {
             <div style={{background:"#161B22",border:"1px solid #21262D",borderRadius:8,overflow:"hidden",position:"sticky",top:16}}>
               <div style={{padding:"10px 14px",borderBottom:"1px solid #21262D",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:700,color:"#7D8590",letterSpacing:".1em"}}>ACTIVITY LOG</span>
-                <button onClick={()=>setLog([])} style={{fontSize:10,color:"#2D3440",background:"none",border:"none",cursor:"pointer"}}>CLEAR</button>
+                <button onClick={clearLog} style={{fontSize:10,color:"#2D3440",background:"none",border:"none",cursor:"pointer"}}>CLEAR</button>
               </div>
               <div ref={logRef} style={{height:340,overflowY:"auto",padding:12}}>
                 {log.map((e,i)=>(
@@ -740,8 +901,11 @@ export default function App() {
                 <div style={{fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:700,color:"#4ADE80",letterSpacing:".1em",marginBottom:10}}>GENERATED ({Object.values(tailoring).filter(v=>v!=="loading"&&v!=="error").length})</div>
                 {Object.values(tailoring).filter(v=>v!=="loading"&&v!=="error").map((r,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:7,marginBottom:7,borderBottom:"1px solid #1A3A2A",fontSize:11}}>
-                    <span style={{color:"#7D8590",maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.filename?.replace("Annabel_Otutu_","").replace(".pdf","")}</span>
-                    <button className="bg" style={{padding:"3px 10px",fontSize:10}} onClick={()=>generatePDF(r)} disabled={!jsPDFReady}>↓</button>
+                    <span style={{color:"#7D8590",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.filename?.replace("Annabel_Otutu_","").replace(".pdf","")}</span>
+                    <div style={{display:"flex",gap:6}}>
+                      <button className="bgh" style={{padding:"3px 8px",fontSize:9}} onClick={()=>setPreviewResume(r)}>👁</button>
+                      <button className="bg" style={{padding:"3px 10px",fontSize:10}} onClick={()=>generatePDF(r)}>↓</button>
+                    </div>
                   </div>
                 ))}
               </div>
