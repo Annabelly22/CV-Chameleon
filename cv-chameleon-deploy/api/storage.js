@@ -1,4 +1,4 @@
-import db, { initTables } from './db.js';
+import { getDb, initTables } from './db.js';
 
 // Flag to track if tables have been initialized
 let tablesInitialized = false;
@@ -45,7 +45,7 @@ async function handleGet(req, res) {
   if (id) {
     // Get specific item by ID
     const table = type === 'activity' ? 'cv_activity' : 'cv_resumes';
-    const result = await db.execute({
+    const result = await getDb().execute({
       sql: `SELECT * FROM ${table} WHERE id = ?`,
       args: [id]
     });
@@ -68,7 +68,7 @@ async function handleGet(req, res) {
 
   if (type === 'resumes') {
     // Get all saved resumes
-    const result = await db.execute(
+    const result = await getDb().execute(
       'SELECT id, filename, resume_json, created_at FROM cv_resumes ORDER BY created_at DESC'
     );
 
@@ -84,7 +84,7 @@ async function handleGet(req, res) {
 
   if (type === 'activity') {
     // Get activity log (last 100 entries)
-    const result = await db.execute(
+    const result = await getDb().execute(
       'SELECT * FROM cv_activity ORDER BY timestamp DESC LIMIT 100'
     );
 
@@ -93,7 +93,7 @@ async function handleGet(req, res) {
 
   if (type === 'preferences') {
     // Get all preferences
-    const result = await db.execute('SELECT key, value FROM cv_preferences');
+    const result = await getDb().execute('SELECT key, value FROM cv_preferences');
 
     const preferences = {};
     for (const row of result.rows) {
@@ -122,13 +122,13 @@ async function handlePost(req, res) {
       return res.status(400).json({ error: 'Missing data or filename for resume' });
     }
 
-    const result = await db.execute({
+    const result = await getDb().execute({
       sql: 'INSERT INTO cv_resumes (filename, resume_json) VALUES (?, ?) RETURNING id, created_at',
       args: [data.filename, JSON.stringify(data)]
     });
 
     // Log the activity
-    await db.execute({
+    await getDb().execute({
       sql: 'INSERT INTO cv_activity (message, type) VALUES (?, ?)',
       args: [`Saved resume: ${data.filename}`, 'save']
     });
@@ -145,7 +145,7 @@ async function handlePost(req, res) {
       return res.status(400).json({ error: 'Missing data.message for activity' });
     }
 
-    const result = await db.execute({
+    const result = await getDb().execute({
       sql: 'INSERT INTO cv_activity (message, type) VALUES (?, ?) RETURNING id, timestamp',
       args: [data.message, data.type || 'info']
     });
@@ -164,7 +164,7 @@ async function handlePost(req, res) {
 
     const valueStr = typeof value === 'object' ? JSON.stringify(value) : String(value);
 
-    await db.execute({
+    await getDb().execute({
       sql: `INSERT INTO cv_preferences (key, value) VALUES (?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       args: [key, valueStr]
@@ -186,7 +186,7 @@ async function handleDelete(req, res) {
   const table = type === 'activity' ? 'cv_activity' : 'cv_resumes';
 
   // Get item info before deleting (for activity log)
-  const existing = await db.execute({
+  const existing = await getDb().execute({
     sql: `SELECT * FROM ${table} WHERE id = ?`,
     args: [id]
   });
@@ -195,7 +195,7 @@ async function handleDelete(req, res) {
     return res.status(404).json({ error: 'Item not found' });
   }
 
-  await db.execute({
+  await getDb().execute({
     sql: `DELETE FROM ${table} WHERE id = ?`,
     args: [id]
   });
@@ -203,7 +203,7 @@ async function handleDelete(req, res) {
   // Log the deletion if it was a resume
   if (table === 'cv_resumes') {
     const filename = existing.rows[0].filename;
-    await db.execute({
+    await getDb().execute({
       sql: 'INSERT INTO cv_activity (message, type) VALUES (?, ?)',
       args: [`Deleted resume: ${filename}`, 'delete']
     });
