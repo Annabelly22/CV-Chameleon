@@ -1,22 +1,24 @@
 import { createClient } from '@libsql/client';
 
-// Turso database credentials
-// These should be set as Vercel environment variables:
-// - TURSO_DATABASE_URL: libsql://rootvi-annabelly22.aws-eu-west-1.turso.io
-// - TURSO_AUTH_TOKEN: (your auth token)
+// Lazy-initialized database client
+let db = null;
 
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
-
-// Check for missing credentials
-if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-  console.warn('Warning: TURSO_DATABASE_URL or TURSO_AUTH_TOKEN environment variables not set');
+function getDb() {
+  if (!db) {
+    if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+      throw new Error('TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set');
+    }
+    db = createClient({
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+  }
+  return db;
 }
 
 // Initialize tables if they don't exist
 export async function initTables() {
+  const client = getDb();
   const statements = [
     `CREATE TABLE IF NOT EXISTS cv_resumes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,8 +40,8 @@ export async function initTables() {
   ];
 
   for (const sql of statements) {
-    await db.execute(sql);
+    await client.execute(sql);
   }
 }
 
-export default db;
+export default { execute: (...args) => getDb().execute(...args) };
