@@ -1,32 +1,48 @@
 {
   "name": "Annabel Otutu",
-  "contact": "Dallas, TX  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
+  "contact": "Abuja, Nigeria (UTC+1)  ·  linkedin.com/in/annabel-otutu  ·  anabelotutu5@gmail.com",
+  "positioning": "Technical Compliance Analyst — NIST SP 800-37, SOC 2, ISO 27001 — who interviews engineers, produces auditor-ready documentation, and automates the pipeline in Python.",
   "summary": "",
   "skills": [
+    "NIST SP 800-37 Risk Management",
+    "SOC 2 Control Documentation",
+    "ISO 27001 Compliance",
+    "Security Questionnaire Response",
     "Technical Writing",
     "Confluence & Jira",
-    "NIST SP 800-37",
     "API Documentation",
-    "CMS & SEO",
-    "Cybersecurity Compliance",
     "SORN & PIA Development",
-    "Process Improvement",
-    "HTML Scripting",
+    "Process Automation (Python)",
     "Content Strategy",
     "Knowledge Management",
-    "Python Automation",
     "Lucidchart",
     "DevOps Documentation",
     "Microsoft Teams",
     "SharePoint",
-    "Section 508 Compliance",
     "Adobe Acrobat Pro",
-    "Federal Documentation Standards",
     "Version Control",
     "SOPs & Policy Writing",
     "Stakeholder Interviews",
     "Agile / Sprint Methodology",
-    "Style Guide Adherence"
+    "Make.com / n8n Automation",
+    "Claude API Integration"
+  ],
+  "workSamples": [
+    {
+      "title": "NIST RMF AC-2 Control Documentation",
+      "description": "Account Management control narrative with evidence mapping",
+      "framework": "NIST SP 800-53"
+    },
+    {
+      "title": "SOC 2 CC6.1 Control Response",
+      "description": "Logical and Physical Access Controls documentation",
+      "framework": "SOC 2 Type II"
+    },
+    {
+      "title": "ISO 27001 / CMMC Policy Documentation",
+      "description": "Information security policy aligned to Annex A controls",
+      "framework": "ISO 27001:2022"
+    }
   ],
   "experience": [
     {
@@ -34,7 +50,7 @@
       "company": "Parkland Health",
       "dates": "2024 – Present",
       "bullets": [
-        "Built automated Python/VBScript tools for board document processing, consent agenda generation, and diversity data extraction",
+        "Built automated Python/VBScript tools for board document processing, consent agenda generation, and diversity data extraction — measurable efficiency gains in regulated healthcare environment",
         "Manage contract documentation lifecycle ensuring regulatory alignment across board-level governance reporting",
         "Develop and maintain documentation frameworks supporting proposal workflows and compliance operations",
         "Coordinate with subject matter experts and stakeholders to validate accuracy and currency of all documentation",
@@ -47,11 +63,10 @@
       "dates": "Apr 2024 – Present",
       "bullets": [
         "Authored System of Records Notices (SORN) and Privacy Impact Assessments (PIA) per federal privacy regulations",
-        "Created Risk Management Reports quarterly in compliance with NIST SP 800-37 standards",
-        "Produced system configuration diagrams and process workflow documentation for EPA federal programs",
+        "Created quarterly Risk Management Reports in compliance with NIST SP 800-37 standards",
+        "Produced system configuration diagrams and process workflow documentation for federal programs",
         "Interviewed technical and functional stakeholders to validate and maintain documentation accuracy",
-        "Ensured all deliverables met federal writing standards and Section 508 accessibility requirements",
-        "Developed SOPs, policy papers, and needs assessments aligned with agency mission and compliance mandates"
+        "Developed SOPs, policy papers, and needs assessments aligned with compliance mandates"
       ]
     },
     {
@@ -103,5 +118,17 @@
       "degree": "Bachelor of Science — Computer Networking and Cybersecurity",
       "school": "Champlain College"
     }
-  ]
+  ],
+  "shippedProducts": [
+    "CV Chameleon — AI-powered resume tailoring system",
+    "BlueGum Studio — Make.com automation platform",
+    "ROOT VI — Trading dashboard with Claude API integration",
+    "Watchman EA Manager — MQL5 expert advisor monitoring system"
+  ],
+  "remoteReadiness": {
+    "location": "Abuja, Nigeria",
+    "timezone": "UTC+1 (covers US Eastern morning through EU close)",
+    "eorCompatible": ["Deel", "Remote.com", "Oyster"],
+    "citizenship": "Nigerian (no US work authorization required for remote contractor roles)"
+  }
 }
