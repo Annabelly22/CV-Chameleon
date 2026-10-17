@@ -1,5 +1,6 @@
 // Multi-source job API aggregator
-// Sources: SerpAPI (Google Jobs), Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
+// Google Jobs cascade: SerpAPI → Serper → SearchAPI → ValueSERP → ScaleSerp → Zenserp
+// Free APIs: Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -14,9 +15,11 @@ export default async function handler(req, res) {
   const isRemote = locations.includes("Remote") || locations.length === 0;
   const searchTerms = titles.slice(0, 5).map(t => t.toLowerCase());
 
-  // Fetch from all sources in parallel (SerpAPI first as primary - Google Jobs)
-  const [serpapi, remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
-    fetchSerpAPI(titles, isRemote),
+  // Google Jobs cascade - try each until one works
+  const googleJobs = await fetchGoogleJobsCascade(titles, isRemote);
+
+  // Fetch from free sources in parallel
+  const [remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
     fetchRemotive(searchTerms),
     fetchArbeitnow(searchTerms),
     fetchRemoteOK(searchTerms),
@@ -25,8 +28,8 @@ export default async function handler(req, res) {
     fetchWeWorkRemotely(searchTerms)
   ]);
 
-  // Combine and dedupe - SerpAPI (Google Jobs) results first
-  const allJobs = [...serpapi, ...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
+  // Combine and dedupe - Google Jobs results first
+  const allJobs = [...googleJobs.jobs, ...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
   const seen = new Set();
   const uniqueJobs = [];
 
@@ -49,7 +52,8 @@ export default async function handler(req, res) {
     jobs: scored.slice(0, 50),
     count: scored.length,
     sources: {
-      serpapi: serpapi.length,
+      googleJobs: googleJobs.jobs.length,
+      googleSource: googleJobs.source,
       remotive: remotive.length,
       arbeitnow: arbeitnow.length,
       remoteok: remoteok.length,
@@ -57,82 +61,241 @@ export default async function handler(req, res) {
       jobicy: jobicy.length,
       wwr: wwr.length
     },
-    serpapiError: serpapi.length === 0 ? lastSerpAPIError : undefined
+    cascade: googleJobs.cascade
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SERPAPI - Google Jobs search (100 free searches/month with new account)
+// GOOGLE JOBS CASCADE - tries each API until one works
+// Order: SerpAPI → Serper → SearchAPI → ValueSERP → ScaleSerp → Zenserp
 // ═══════════════════════════════════════════════════════════════════════════
-let lastSerpAPIError = null;
 
-async function fetchSerpAPI(titles, isRemote) {
-  const apiKey = process.env.SERPAPI_KEY;
+async function fetchGoogleJobsCascade(titles, isRemote) {
+  const cascade = [];
+  const locationStr = isRemote ? "remote" : "";
+  const query = `${titles[0]} ${locationStr}`.trim();
 
-  if (!apiKey) {
-    lastSerpAPIError = "SERPAPI_KEY not configured";
-    return [];
+  // 1. Try SerpAPI
+  if (process.env.SERPAPI_KEY) {
+    const result = await trySerpAPI(titles, isRemote);
+    cascade.push({ service: "SerpAPI", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "SerpAPI", cascade };
   }
 
+  // 2. Try Serper.dev (2,500 free)
+  if (process.env.SERPER_API_KEY) {
+    const result = await trySerper(query);
+    cascade.push({ service: "Serper", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "Serper", cascade };
+  }
+
+  // 3. Try SearchAPI.io (100 free/month)
+  if (process.env.SEARCHAPI_KEY) {
+    const result = await trySearchAPI(query);
+    cascade.push({ service: "SearchAPI", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "SearchAPI", cascade };
+  }
+
+  // 4. Try ValueSERP (100 free/month)
+  if (process.env.VALUESERP_KEY) {
+    const result = await tryValueSERP(query);
+    cascade.push({ service: "ValueSERP", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "ValueSERP", cascade };
+  }
+
+  // 5. Try ScaleSerp (100 free/month)
+  if (process.env.SCALESERP_KEY) {
+    const result = await tryScaleSerp(query);
+    cascade.push({ service: "ScaleSerp", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "ScaleSerp", cascade };
+  }
+
+  // 6. Try Zenserp (50 free/month)
+  if (process.env.ZENSERP_KEY) {
+    const result = await tryZenserp(query);
+    cascade.push({ service: "Zenserp", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "Zenserp", cascade };
+  }
+
+  return { jobs: [], source: "none", cascade };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERPAPI - 100 free lifetime, then $50/month
+// ═══════════════════════════════════════════════════════════════════════════
+async function trySerpAPI(titles, isRemote) {
   try {
     const jobs = [];
     const seen = new Set();
     const locationStr = isRemote ? "remote" : "";
 
-    // Search for first 3 titles (conserve quota - 100/month free)
-    for (const title of titles.slice(0, 3)) {
-      const query = `${title} ${locationStr}`.trim();
+    for (const title of titles.slice(0, 2)) {
       const params = new URLSearchParams({
         engine: "google_jobs",
-        q: query,
-        hl: "en",
-        gl: "us",
+        q: `${title} ${locationStr}`.trim(),
+        hl: "en", gl: "us",
         chips: "date_posted:month",
-        api_key: apiKey
+        api_key: process.env.SERPAPI_KEY
       });
 
       const r = await fetch(`https://serpapi.com/search?${params}`);
       const data = await r.json();
-
-      if (data.error) {
-        lastSerpAPIError = data.error;
-        continue;
-      }
+      if (data.error) return { jobs: [], error: data.error };
 
       for (const job of (data.jobs_results || [])) {
         const key = `${job.title}-${job.company_name}`;
         if (seen.has(key)) continue;
         seen.add(key);
-
-        jobs.push({
-          id: `serpapi-${job.job_id || jobs.length}`,
-          title: job.title,
-          company: job.company_name,
-          location: job.location || "Remote",
-          url: job.apply_options?.[0]?.link || job.share_link || "#",
-          companyUrl: `https://www.google.com/search?q=${encodeURIComponent(job.company_name + " careers")}`,
-          source: "Google Jobs",
-          description: job.description ? job.description.slice(0, 500) : "No description",
-          salary: job.detected_extensions?.salary || null,
-          posted: job.detected_extensions?.posted_at || "Recent",
-          tags: job.job_highlights?.Qualifications?.slice(0, 3) || [],
-          applyOptions: (job.apply_options || []).slice(0, 3).map(o => ({
-            label: o.title || "Apply",
-            url: o.link
-          }))
-        });
+        jobs.push(parseGoogleJob(job, "SerpAPI", jobs.length));
       }
     }
-
-    if (jobs.length === 0 && !lastSerpAPIError) {
-      lastSerpAPIError = "No results found";
-    }
-
-    return jobs.slice(0, 25);
+    return { jobs: jobs.slice(0, 25), error: null };
   } catch (e) {
-    lastSerpAPIError = e.message;
-    return [];
+    return { jobs: [], error: e.message };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERPER.DEV - 2,500 free queries
+// ═══════════════════════════════════════════════════════════════════════════
+async function trySerper(query) {
+  try {
+    const r = await fetch("https://google.serper.dev/jobs", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": process.env.SERPER_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ q: query, gl: "us", hl: "en" })
+    });
+    const data = await r.json();
+    if (data.error) return { jobs: [], error: data.error };
+
+    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => ({
+      id: `serper-${i}`,
+      title: job.title,
+      company: job.companyName,
+      location: job.location || "Remote",
+      url: job.link || "#",
+      companyUrl: `https://www.google.com/search?q=${encodeURIComponent(job.companyName + " careers")}`,
+      source: "Google Jobs",
+      description: job.snippet || "",
+      salary: job.salary || null,
+      posted: job.date || "Recent",
+      tags: [],
+      applyOptions: [{ label: "Apply", url: job.link }]
+    }));
+    return { jobs, error: null };
+  } catch (e) {
+    return { jobs: [], error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEARCHAPI.IO - 100 free/month
+// ═══════════════════════════════════════════════════════════════════════════
+async function trySearchAPI(query) {
+  try {
+    const params = new URLSearchParams({
+      engine: "google_jobs",
+      q: query,
+      api_key: process.env.SEARCHAPI_KEY
+    });
+    const r = await fetch(`https://www.searchapi.io/api/v1/search?${params}`);
+    const data = await r.json();
+    if (data.error) return { jobs: [], error: data.error };
+
+    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "SearchAPI", i));
+    return { jobs, error: null };
+  } catch (e) {
+    return { jobs: [], error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VALUESERP - 100 free/month
+// ═══════════════════════════════════════════════════════════════════════════
+async function tryValueSERP(query) {
+  try {
+    const params = new URLSearchParams({
+      api_key: process.env.VALUESERP_KEY,
+      search_type: "jobs",
+      q: query
+    });
+    const r = await fetch(`https://api.valueserp.com/search?${params}`);
+    const data = await r.json();
+    if (data.error) return { jobs: [], error: data.error };
+
+    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "ValueSERP", i));
+    return { jobs, error: null };
+  } catch (e) {
+    return { jobs: [], error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCALESERP - 100 free/month
+// ═══════════════════════════════════════════════════════════════════════════
+async function tryScaleSerp(query) {
+  try {
+    const params = new URLSearchParams({
+      api_key: process.env.SCALESERP_KEY,
+      search_type: "jobs",
+      q: query
+    });
+    const r = await fetch(`https://api.scaleserp.com/search?${params}`);
+    const data = await r.json();
+    if (data.error) return { jobs: [], error: data.error };
+
+    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "ScaleSerp", i));
+    return { jobs, error: null };
+  } catch (e) {
+    return { jobs: [], error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ZENSERP - 50 free/month
+// ═══════════════════════════════════════════════════════════════════════════
+async function tryZenserp(query) {
+  try {
+    const params = new URLSearchParams({
+      apikey: process.env.ZENSERP_KEY,
+      q: query,
+      tbm: "jobs"
+    });
+    const r = await fetch(`https://app.zenserp.com/api/v2/search?${params}`);
+    const data = await r.json();
+    if (data.error) return { jobs: [], error: data.error };
+
+    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "Zenserp", i));
+    return { jobs, error: null };
+  } catch (e) {
+    return { jobs: [], error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Parse Google Jobs result (common format across APIs)
+// ═══════════════════════════════════════════════════════════════════════════
+function parseGoogleJob(job, source, index) {
+  return {
+    id: `${source.toLowerCase()}-${job.job_id || index}`,
+    title: job.title,
+    company: job.company_name || job.companyName || job.company || "Unknown",
+    location: job.location || "Remote",
+    url: job.apply_options?.[0]?.link || job.link || job.share_link || "#",
+    companyUrl: `https://www.google.com/search?q=${encodeURIComponent((job.company_name || job.company || "") + " careers")}`,
+    source: "Google Jobs",
+    description: (job.description || job.snippet || "").slice(0, 500),
+    salary: job.detected_extensions?.salary || job.salary || null,
+    posted: job.detected_extensions?.posted_at || job.date || "Recent",
+    tags: job.job_highlights?.Qualifications?.slice(0, 3) || [],
+    applyOptions: (job.apply_options || []).slice(0, 3).map(o => ({
+      label: o.title || "Apply",
+      url: o.link
+    }))
+  };
 }
 
 function calculateRelevance(title, searchTerms) {
