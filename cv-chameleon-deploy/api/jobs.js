@@ -1,5 +1,5 @@
-// Multi-source free job API aggregator
-// Sources: Google Custom Search, Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
+// Multi-source job API aggregator
+// Sources: SerpAPI (Google Jobs), Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -14,9 +14,9 @@ export default async function handler(req, res) {
   const isRemote = locations.includes("Remote") || locations.length === 0;
   const searchTerms = titles.slice(0, 5).map(t => t.toLowerCase());
 
-  // Fetch from all sources in parallel (Google first as primary)
-  const [google, remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
-    fetchGoogleSearch(titles, isRemote),
+  // Fetch from all sources in parallel (SerpAPI first as primary - Google Jobs)
+  const [serpapi, remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
+    fetchSerpAPI(titles, isRemote),
     fetchRemotive(searchTerms),
     fetchArbeitnow(searchTerms),
     fetchRemoteOK(searchTerms),
@@ -25,8 +25,8 @@ export default async function handler(req, res) {
     fetchWeWorkRemotely(searchTerms)
   ]);
 
-  // Combine and dedupe - Google results first (highest quality)
-  const allJobs = [...google, ...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
+  // Combine and dedupe - SerpAPI (Google Jobs) results first
+  const allJobs = [...serpapi, ...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
   const seen = new Set();
   const uniqueJobs = [];
 
@@ -46,10 +46,10 @@ export default async function handler(req, res) {
   scored.sort((a, b) => b.score - a.score);
 
   return res.status(200).json({
-    jobs: scored.slice(0, 40),
+    jobs: scored.slice(0, 50),
     count: scored.length,
     sources: {
-      google: google.length,
+      serpapi: serpapi.length,
       remotive: remotive.length,
       arbeitnow: arbeitnow.length,
       remoteok: remoteok.length,
@@ -57,139 +57,82 @@ export default async function handler(req, res) {
       jobicy: jobicy.length,
       wwr: wwr.length
     },
-    googleError: google.length === 0 ? lastGoogleError : undefined
+    serpapiError: serpapi.length === 0 ? lastSerpAPIError : undefined
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GOOGLE CUSTOM SEARCH - 100 free queries/day, searches job sites via Google
+// SERPAPI - Google Jobs search (100 free searches/month with new account)
 // ═══════════════════════════════════════════════════════════════════════════
-// Store last Google error for debugging
-let lastGoogleError = null;
+let lastSerpAPIError = null;
 
-async function fetchGoogleSearch(titles, isRemote) {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
+async function fetchSerpAPI(titles, isRemote) {
+  const apiKey = process.env.SERPAPI_KEY;
 
-  if (!apiKey || !cx) {
-    lastGoogleError = "Google Custom Search not configured (missing API key or CX)";
+  if (!apiKey) {
+    lastSerpAPIError = "SERPAPI_KEY not configured";
     return [];
   }
 
   try {
     const jobs = [];
+    const seen = new Set();
     const locationStr = isRemote ? "remote" : "";
 
-    // Search for first 2 titles to conserve quota (100/day)
-    // Simpler query without site: restrictions (those might be causing issues)
-    for (const title of titles.slice(0, 2)) {
-      const query = `"${title}" ${locationStr} job hiring 2026`;
+    // Search for first 3 titles (conserve quota - 100/month free)
+    for (const title of titles.slice(0, 3)) {
+      const query = `${title} ${locationStr}`.trim();
       const params = new URLSearchParams({
-        key: apiKey,
-        cx: cx,
+        engine: "google_jobs",
         q: query,
-        num: 10
+        hl: "en",
+        gl: "us",
+        chips: "date_posted:month",
+        api_key: apiKey
       });
 
-      const r = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
+      const r = await fetch(`https://serpapi.com/search?${params}`);
       const data = await r.json();
 
-      if (!r.ok || data.error) {
-        lastGoogleError = data.error?.message || `HTTP ${r.status}`;
+      if (data.error) {
+        lastSerpAPIError = data.error;
         continue;
       }
 
-      for (const item of (data.items || [])) {
-        const parsed = parseGoogleResult(item, jobs.length);
-        if (parsed) jobs.push(parsed);
+      for (const job of (data.jobs_results || [])) {
+        const key = `${job.title}-${job.company_name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        jobs.push({
+          id: `serpapi-${job.job_id || jobs.length}`,
+          title: job.title,
+          company: job.company_name,
+          location: job.location || "Remote",
+          url: job.apply_options?.[0]?.link || job.share_link || "#",
+          companyUrl: `https://www.google.com/search?q=${encodeURIComponent(job.company_name + " careers")}`,
+          source: "Google Jobs",
+          description: job.description ? job.description.slice(0, 500) : "No description",
+          salary: job.detected_extensions?.salary || null,
+          posted: job.detected_extensions?.posted_at || "Recent",
+          tags: job.job_highlights?.Qualifications?.slice(0, 3) || [],
+          applyOptions: (job.apply_options || []).slice(0, 3).map(o => ({
+            label: o.title || "Apply",
+            url: o.link
+          }))
+        });
       }
     }
 
-    if (jobs.length === 0 && !lastGoogleError) {
-      lastGoogleError = "No results found";
+    if (jobs.length === 0 && !lastSerpAPIError) {
+      lastSerpAPIError = "No results found";
     }
 
-    return jobs.slice(0, 20);
+    return jobs.slice(0, 25);
   } catch (e) {
-    lastGoogleError = e.message;
+    lastSerpAPIError = e.message;
     return [];
   }
-}
-
-// Expose Google error for debugging
-export function getGoogleError() {
-  return lastGoogleError;
-}
-
-function parseGoogleResult(item, index) {
-  const url = item.link || "";
-  const title = item.title || "";
-  const snippet = item.snippet || "";
-
-  let jobTitle = title;
-  let company = "Company";
-  let location = "Remote";
-
-  // Parse LinkedIn format: "Job Title - Company | LinkedIn"
-  if (url.includes("linkedin.com")) {
-    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[|\-]/);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].trim();
-    }
-  }
-  // Parse Indeed format: "Job Title - Company - Location | Indeed.com"
-  else if (url.includes("indeed.com")) {
-    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[-–]/);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].trim();
-    }
-  }
-  // Parse Glassdoor: "Job Title at Company | Glassdoor"
-  else if (url.includes("glassdoor.com")) {
-    const match = title.match(/^(.+?)\s+at\s+(.+?)\s*[|\-]/i);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].trim();
-    }
-  }
-  // Parse Wellfound: "Job Title at Company"
-  else if (url.includes("wellfound.com")) {
-    const match = title.match(/^(.+?)\s+at\s+(.+)/i);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].replace(/[|\-].*$/, "").trim();
-    }
-  }
-
-  // Extract location from snippet
-  if (snippet.toLowerCase().includes("remote")) {
-    location = "Remote";
-  } else {
-    const locMatch = snippet.match(/(?:in|at|location:?)\s*([A-Z][a-z]+(?:[,\s]+[A-Z]{2})?)/);
-    if (locMatch) location = locMatch[1];
-  }
-
-  const source = url.includes("linkedin") ? "LinkedIn (Google)" :
-                 url.includes("indeed") ? "Indeed (Google)" :
-                 url.includes("glassdoor") ? "Glassdoor (Google)" :
-                 url.includes("wellfound") ? "Wellfound (Google)" : "Google";
-
-  return {
-    id: `google-${index}-${Date.now()}`,
-    title: jobTitle.slice(0, 100),
-    company: company.slice(0, 60),
-    location,
-    url,
-    companyUrl: `https://www.google.com/search?q=${encodeURIComponent(company + " careers")}`,
-    source,
-    description: snippet.slice(0, 500),
-    salary: null,
-    posted: "Recent",
-    tags: [],
-    applyOptions: [{ label: `Apply on ${source.split(" ")[0]}`, url }]
-  };
 }
 
 function calculateRelevance(title, searchTerms) {
