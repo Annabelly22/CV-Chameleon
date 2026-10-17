@@ -40,11 +40,15 @@ export default async function handler(req, res) {
   const seen = new Set();
 
   // First pass: with month filter
+  const errors = [];
   await Promise.all(queries.slice(0, 8).map(async ({ q, location }) => {
     try {
       const params = new URLSearchParams({ engine: "google_jobs", q, location, chips: "date_posted:month", api_key: apiKey, hl: "en", gl: "us" });
       const r = await fetch(`https://serpapi.com/search?${params}`);
       const data = await r.json();
+      if (data?.error) {
+        errors.push(`SerpAPI error: ${data.error}`);
+      }
       if (data?.jobs_results?.length) {
         for (const job of data.jobs_results) {
           const key = `${job.title}-${job.company_name}`;
@@ -53,7 +57,7 @@ export default async function handler(req, res) {
           allJobs.push(parseJob(job, allJobs.length));
         }
       }
-    } catch (_) {}
+    } catch (e) { errors.push(e.message); }
   }));
 
   // Fallback: no date filter if nothing came back
@@ -63,6 +67,9 @@ export default async function handler(req, res) {
         const params = new URLSearchParams({ engine: "google_jobs", q, location, api_key: apiKey, hl: "en", gl: "us" });
         const r = await fetch(`https://serpapi.com/search?${params}`);
         const data = await r.json();
+        if (data?.error) {
+          errors.push(`SerpAPI fallback error: ${data.error}`);
+        }
         if (data?.jobs_results?.length) {
           for (const job of data.jobs_results) {
             const key = `${job.title}-${job.company_name}`;
@@ -71,11 +78,11 @@ export default async function handler(req, res) {
             allJobs.push(parseJob(job, allJobs.length));
           }
         }
-      } catch (_) {}
+      } catch (e) { errors.push(e.message); }
     }));
   }
 
-  return res.status(200).json({ jobs: allJobs.slice(0, 25), count: allJobs.length });
+  return res.status(200).json({ jobs: allJobs.slice(0, 25), count: allJobs.length, queries: queries.length, errors: errors.length ? errors : undefined });
 }
 
 function parseJob(job, index) {
