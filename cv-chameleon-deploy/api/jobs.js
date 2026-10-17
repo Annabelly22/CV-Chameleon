@@ -1,5 +1,5 @@
 // Multi-source job API aggregator
-// Google Jobs cascade: SerpAPI → Serper → SearchAPI → ValueSERP → ScaleSerp → Zenserp
+// Google Jobs cascade: SerpAPI → SearchAPI → ValueSERP → ScaleSerp → Zenserp
 // Free APIs: Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
 
 export default async function handler(req, res) {
@@ -82,35 +82,28 @@ async function fetchGoogleJobsCascade(titles, isRemote) {
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "SerpAPI", cascade };
   }
 
-  // 2. Try Serper.dev (2,500 free)
-  if (process.env.SERPER_API_KEY) {
-    const result = await trySerper(query);
-    cascade.push({ service: "Serper", status: result.error || "success", count: result.jobs.length });
-    if (result.jobs.length > 0) return { jobs: result.jobs, source: "Serper", cascade };
-  }
-
-  // 3. Try SearchAPI.io (100 free/month)
+  // 2. Try SearchAPI.io (100 free/month)
   if (process.env.SEARCHAPI_KEY) {
     const result = await trySearchAPI(query);
     cascade.push({ service: "SearchAPI", status: result.error || "success", count: result.jobs.length });
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "SearchAPI", cascade };
   }
 
-  // 4. Try ValueSERP (100 free/month)
+  // 3. Try ValueSERP (100 free/month)
   if (process.env.VALUESERP_KEY) {
     const result = await tryValueSERP(query);
     cascade.push({ service: "ValueSERP", status: result.error || "success", count: result.jobs.length });
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "ValueSERP", cascade };
   }
 
-  // 5. Try ScaleSerp (100 free/month)
+  // 4. Try ScaleSerp (100 free/month)
   if (process.env.SCALESERP_KEY) {
     const result = await tryScaleSerp(query);
     cascade.push({ service: "ScaleSerp", status: result.error || "success", count: result.jobs.length });
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "ScaleSerp", cascade };
   }
 
-  // 6. Try Zenserp (50 free/month)
+  // 5. Try Zenserp (50 free/month)
   if (process.env.ZENSERP_KEY) {
     const result = await tryZenserp(query);
     cascade.push({ service: "Zenserp", status: result.error || "success", count: result.jobs.length });
@@ -150,42 +143,6 @@ async function trySerpAPI(titles, isRemote) {
       }
     }
     return { jobs: jobs.slice(0, 25), error: null };
-  } catch (e) {
-    return { jobs: [], error: e.message };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SERPER.DEV - 2,500 free queries
-// ═══════════════════════════════════════════════════════════════════════════
-async function trySerper(query) {
-  try {
-    const r = await fetch("https://google.serper.dev/jobs", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": process.env.SERPER_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ q: query, gl: "us", hl: "en" })
-    });
-    const data = await r.json();
-    if (data.error) return { jobs: [], error: data.error };
-
-    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => ({
-      id: `serper-${i}`,
-      title: job.title,
-      company: job.companyName,
-      location: job.location || "Remote",
-      url: job.link || "#",
-      companyUrl: `https://www.google.com/search?q=${encodeURIComponent(job.companyName + " careers")}`,
-      source: "Google Jobs",
-      description: job.snippet || "",
-      salary: job.salary || null,
-      posted: job.date || "Recent",
-      tags: [],
-      applyOptions: [{ label: "Apply", url: job.link }]
-    }));
-    return { jobs, error: null };
   } catch (e) {
     return { jobs: [], error: e.message };
   }
