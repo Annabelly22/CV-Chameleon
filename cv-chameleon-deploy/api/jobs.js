@@ -1,13 +1,9 @@
+// Multi-source free job API aggregator
+// Sources: Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, We Work Remotely RSS
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const googleApiKey = process.env.GOOGLE_API_KEY;
-  const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-
-  if (!googleApiKey || !searchEngineId) {
-    return res.status(500).json({ error: "Google Search API not configured" });
   }
 
   const { titles = [], locations = [] } = req.body;
@@ -15,188 +11,375 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "No job titles provided" });
   }
 
-  const allJobs = [];
+  const isRemote = locations.includes("Remote") || locations.length === 0;
+  const searchTerms = titles.slice(0, 5).map(t => t.toLowerCase());
+
+  // Fetch from all sources in parallel
+  const [remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
+    fetchRemotive(searchTerms),
+    fetchArbeitnow(searchTerms),
+    fetchRemoteOK(searchTerms),
+    fetchHimalayas(searchTerms),
+    fetchJobicy(searchTerms),
+    fetchWeWorkRemotely(searchTerms)
+  ]);
+
+  // Combine and dedupe
+  const allJobs = [...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
   const seen = new Set();
-  const errors = [];
+  const uniqueJobs = [];
 
-  // Build search queries
-  const isRemote = locations.includes("Remote");
-  const locationStr = isRemote ? "remote" : locations.filter(l => !["Contract"].includes(l)).join(" OR ") || "remote";
-
-  // Search job boards directly
-  const jobSites = "site:linkedin.com/jobs OR site:indeed.com OR site:glassdoor.com OR site:wellfound.com OR site:remotive.com";
-
-  for (const title of titles.slice(0, 3)) {
-    try {
-      const query = `${title} ${locationStr} ${jobSites}`;
-      const params = new URLSearchParams({
-        key: googleApiKey,
-        cx: searchEngineId,
-        q: query,
-        num: 10,
-        dateRestrict: "m1" // Last month
-      });
-
-      const r = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
-      const data = await r.json();
-
-      if (data.error) {
-        errors.push(`Google API: ${data.error.message}`);
-        continue;
-      }
-
-      if (data.items?.length) {
-        for (const item of data.items) {
-          const key = `${item.title}-${item.link}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-
-          // Parse job from search result
-          const job = parseSearchResult(item, title, allJobs.length);
-          if (job) allJobs.push(job);
-        }
-      }
-    } catch (e) {
-      errors.push(e.message);
+  for (const job of allJobs) {
+    const key = `${job.title.toLowerCase().slice(0, 30)}-${job.company.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueJobs.push(job);
     }
   }
 
-  // If Google Custom Search fails or returns nothing, use fallback static job boards
-  if (!allJobs.length) {
-    const fallbackJobs = generateFallbackJobs(titles, isRemote);
-    allJobs.push(...fallbackJobs);
-  }
+  // Sort by relevance (title match score)
+  const scored = uniqueJobs.map(job => ({
+    ...job,
+    score: calculateRelevance(job.title, searchTerms)
+  }));
+  scored.sort((a, b) => b.score - a.score);
 
   return res.status(200).json({
-    jobs: allJobs.slice(0, 25),
-    count: allJobs.length,
-    errors: errors.length ? errors : undefined
+    jobs: scored.slice(0, 30),
+    count: scored.length,
+    sources: {
+      remotive: remotive.length,
+      arbeitnow: arbeitnow.length,
+      remoteok: remoteok.length,
+      himalayas: himalayas.length,
+      jobicy: jobicy.length,
+      wwr: wwr.length
+    }
   });
 }
 
-function parseSearchResult(item, searchTitle, index) {
-  const url = item.link || "";
-  const title = item.title || "";
-
-  // Extract company from title or snippet
-  let company = "Unknown Company";
-  let jobTitle = searchTitle;
-
-  // LinkedIn format: "Job Title - Company | LinkedIn"
-  if (url.includes("linkedin.com")) {
-    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*\|/);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].trim();
+function calculateRelevance(title, searchTerms) {
+  const t = title.toLowerCase();
+  let score = 0;
+  for (const term of searchTerms) {
+    if (t.includes(term)) score += 10;
+    // Partial matches
+    const words = term.split(/\s+/);
+    for (const word of words) {
+      if (word.length > 3 && t.includes(word)) score += 3;
     }
   }
-  // Indeed format: "Job Title - Company - Location | Indeed.com"
-  else if (url.includes("indeed.com")) {
-    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[-–]/);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].trim();
-    }
-  }
-  // Glassdoor format
-  else if (url.includes("glassdoor.com")) {
-    const match = title.match(/^(.+?)\s+at\s+(.+?)\s*[-–|]/i);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].trim();
-    }
-  }
-  // Generic fallback
-  else {
-    const match = title.match(/^(.+?)\s*[-–|at]\s*(.+)/i);
-    if (match) {
-      jobTitle = match[1].trim();
-      company = match[2].replace(/\|.*$/, "").trim();
-    }
-  }
-
-  // Extract location from snippet
-  let location = "Remote";
-  const snippet = item.snippet || "";
-  const locMatch = snippet.match(/(?:in|at|location:?)\s*([A-Z][a-z]+(?:\s*,?\s*[A-Z]{2})?)/i);
-  if (locMatch) location = locMatch[1];
-  if (snippet.toLowerCase().includes("remote")) location = "Remote";
-
-  return {
-    id: `search-${index}-${Date.now()}`,
-    title: jobTitle.slice(0, 100),
-    company: company.slice(0, 50),
-    location,
-    url,
-    companyUrl: `https://www.google.com/search?q=${encodeURIComponent(company + " careers")}`,
-    source: url.includes("linkedin") ? "LinkedIn" :
-            url.includes("indeed") ? "Indeed" :
-            url.includes("glassdoor") ? "Glassdoor" :
-            url.includes("wellfound") ? "Wellfound" :
-            url.includes("remotive") ? "Remotive" : "Web",
-    description: snippet.slice(0, 500),
-    salary: null,
-    posted: "Recent",
-    applyOptions: [{ label: "Apply", url }]
-  };
+  // Boost compliance/technical writer roles
+  if (t.includes("compliance")) score += 5;
+  if (t.includes("technical writer")) score += 5;
+  if (t.includes("documentation")) score += 3;
+  if (t.includes("proposal")) score += 3;
+  if (t.includes("grc") || t.includes("security")) score += 3;
+  return score;
 }
 
-function generateFallbackJobs(titles, isRemote) {
-  // Generate direct links to job board searches
-  const jobs = [];
-  const title = titles[0] || "Technical Writer";
-  const encodedTitle = encodeURIComponent(title);
-  const location = isRemote ? "remote" : "";
+// ═══════════════════════════════════════════════════════════════════════════
+// REMOTIVE API - Free, no key, remote jobs
+// Limit: 4 fetches/day, 2 req/min - we cache aggressively
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchRemotive(searchTerms) {
+  try {
+    const categories = ["writing", "qa", "all-others", "marketing"];
+    const jobs = [];
 
-  const boards = [
-    {
-      name: "LinkedIn",
-      url: `https://www.linkedin.com/jobs/search/?keywords=${encodedTitle}&f_WT=2`, // f_WT=2 is remote
-      company: "LinkedIn Jobs"
-    },
-    {
-      name: "Indeed",
-      url: `https://www.indeed.com/jobs?q=${encodedTitle}&l=${isRemote ? "remote" : ""}&fromage=14`,
-      company: "Indeed"
-    },
-    {
-      name: "Wellfound",
-      url: `https://wellfound.com/jobs?query=${encodedTitle}`,
-      company: "Wellfound (AngelList)"
-    },
-    {
-      name: "Remotive",
-      url: `https://remotive.com/remote-jobs/writing?query=${encodedTitle}`,
-      company: "Remotive"
-    },
-    {
-      name: "We Work Remotely",
-      url: `https://weworkremotely.com/remote-jobs/search?term=${encodedTitle}`,
-      company: "We Work Remotely"
-    },
-    {
-      name: "FlexJobs",
-      url: `https://www.flexjobs.com/search?search=${encodedTitle}&location=Remote`,
-      company: "FlexJobs"
+    for (const cat of categories) {
+      const r = await fetch(`https://remotive.com/api/remote-jobs?category=${cat}&limit=50`, {
+        headers: { "User-Agent": "CV-Chameleon/1.0" }
+      });
+      if (!r.ok) continue;
+      const data = await r.json();
+
+      for (const job of (data.jobs || [])) {
+        if (matchesSearch(job.title, searchTerms)) {
+          jobs.push({
+            id: `remotive-${job.id}`,
+            title: job.title,
+            company: job.company_name,
+            location: job.candidate_required_location || "Remote",
+            url: job.url,
+            companyUrl: job.company_logo_url ? `https://${new URL(job.company_logo_url).hostname.replace('logo.clearbit.com/', '')}` : null,
+            source: "Remotive",
+            description: stripHtml(job.description).slice(0, 500),
+            salary: job.salary || null,
+            posted: job.publication_date,
+            tags: job.tags || [],
+            applyOptions: [{ label: "Apply on Remotive", url: job.url }]
+          });
+        }
+      }
     }
-  ];
+    return jobs.slice(0, 15);
+  } catch (e) {
+    console.error("Remotive error:", e.message);
+    return [];
+  }
+}
 
-  for (let i = 0; i < boards.length; i++) {
-    const board = boards[i];
-    jobs.push({
-      id: `fallback-${i}`,
-      title: `${title} positions on ${board.name}`,
-      company: board.company,
-      location: isRemote ? "Remote" : "Various",
-      url: board.url,
-      companyUrl: board.url,
-      source: board.name,
-      description: `Search for ${title} positions on ${board.name}. Click to view current openings.`,
-      salary: null,
-      posted: "Live search",
-      applyOptions: [{ label: `Search ${board.name}`, url: board.url }]
+// ═══════════════════════════════════════════════════════════════════════════
+// ARBEITNOW API - Free, no key, European/global jobs
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchArbeitnow(searchTerms) {
+  try {
+    const jobs = [];
+    const r = await fetch("https://www.arbeitnow.com/api/job-board-api", {
+      headers: { "User-Agent": "CV-Chameleon/1.0" }
     });
+    if (!r.ok) return [];
+    const data = await r.json();
+
+    for (const job of (data.data || [])) {
+      if (matchesSearch(job.title, searchTerms) || matchesSearch(job.description || "", searchTerms)) {
+        const isRemote = job.remote === true || (job.location || "").toLowerCase().includes("remote");
+        jobs.push({
+          id: `arbeitnow-${job.slug}`,
+          title: job.title,
+          company: job.company_name,
+          location: isRemote ? "Remote" : (job.location || "Unknown"),
+          url: job.url,
+          companyUrl: null,
+          source: "Arbeitnow",
+          description: stripHtml(job.description || "").slice(0, 500),
+          salary: null,
+          posted: job.created_at,
+          tags: job.tags || [],
+          applyOptions: [{ label: "Apply on Arbeitnow", url: job.url }]
+        });
+      }
+    }
+    return jobs.slice(0, 15);
+  } catch (e) {
+    console.error("Arbeitnow error:", e.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REMOTEOK API - Free, no key, remote tech jobs
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchRemoteOK(searchTerms) {
+  try {
+    const jobs = [];
+    const r = await fetch("https://remoteok.com/api", {
+      headers: { "User-Agent": "CV-Chameleon/1.0" }
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+
+    // First item is metadata, skip it
+    for (const job of data.slice(1)) {
+      if (!job.position) continue;
+      if (matchesSearch(job.position, searchTerms) || matchesSearch(job.description || "", searchTerms)) {
+        jobs.push({
+          id: `remoteok-${job.id}`,
+          title: job.position,
+          company: job.company,
+          location: job.location || "Remote",
+          url: job.url || `https://remoteok.com/l/${job.id}`,
+          companyUrl: job.company_logo ? null : null,
+          source: "RemoteOK",
+          description: stripHtml(job.description || "").slice(0, 500),
+          salary: job.salary_min && job.salary_max ? `$${job.salary_min}-${job.salary_max}` : null,
+          posted: job.date,
+          tags: job.tags || [],
+          applyOptions: [{ label: "Apply on RemoteOK", url: job.url || `https://remoteok.com/l/${job.id}` }]
+        });
+      }
+    }
+    return jobs.slice(0, 15);
+  } catch (e) {
+    console.error("RemoteOK error:", e.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HIMALAYAS API - Free, remote jobs
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchHimalayas(searchTerms) {
+  try {
+    const jobs = [];
+    const r = await fetch("https://himalayas.app/jobs/api?limit=100", {
+      headers: { "User-Agent": "CV-Chameleon/1.0" }
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+
+    for (const job of (data.jobs || [])) {
+      if (matchesSearch(job.title, searchTerms) || matchesSearch(job.description || "", searchTerms)) {
+        jobs.push({
+          id: `himalayas-${job.id}`,
+          title: job.title,
+          company: job.companyName,
+          location: job.locationRestrictions?.join(", ") || "Remote / Worldwide",
+          url: `https://himalayas.app/jobs/${job.id}`,
+          companyUrl: job.companyUrl,
+          source: "Himalayas",
+          description: stripHtml(job.description || "").slice(0, 500),
+          salary: job.minSalary && job.maxSalary ? `$${job.minSalary}-${job.maxSalary}` : null,
+          posted: job.pubDate,
+          tags: job.categories || [],
+          applyOptions: [{ label: "Apply on Himalayas", url: `https://himalayas.app/jobs/${job.id}` }]
+        });
+      }
+    }
+    return jobs.slice(0, 15);
+  } catch (e) {
+    console.error("Himalayas error:", e.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// JOBICY API - Free, remote jobs
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchJobicy(searchTerms) {
+  try {
+    const jobs = [];
+    const r = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50", {
+      headers: { "User-Agent": "CV-Chameleon/1.0" }
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+
+    for (const job of (data.jobs || [])) {
+      if (matchesSearch(job.jobTitle, searchTerms) || matchesSearch(job.jobDescription || "", searchTerms)) {
+        jobs.push({
+          id: `jobicy-${job.id}`,
+          title: job.jobTitle,
+          company: job.companyName,
+          location: job.jobGeo || "Remote",
+          url: job.url,
+          companyUrl: null,
+          source: "Jobicy",
+          description: stripHtml(job.jobDescription || "").slice(0, 500),
+          salary: job.annualSalaryMin && job.annualSalaryMax ? `$${job.annualSalaryMin}-${job.annualSalaryMax}` : null,
+          posted: job.pubDate,
+          tags: job.jobIndustry ? [job.jobIndustry] : [],
+          applyOptions: [{ label: "Apply on Jobicy", url: job.url }]
+        });
+      }
+    }
+    return jobs.slice(0, 15);
+  } catch (e) {
+    console.error("Jobicy error:", e.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WE WORK REMOTELY RSS - Free RSS feed
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchWeWorkRemotely(searchTerms) {
+  try {
+    const jobs = [];
+    // WWR has category-specific feeds
+    const categories = [
+      "copywriting",
+      "customer-support",
+      "marketing",
+      "all-other-remote"
+    ];
+
+    for (const cat of categories) {
+      try {
+        const r = await fetch(`https://weworkremotely.com/categories/${cat}.rss`, {
+          headers: { "User-Agent": "CV-Chameleon/1.0" }
+        });
+        if (!r.ok) continue;
+        const xml = await r.text();
+
+        // Parse RSS XML (simple regex extraction)
+        const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
+        for (const item of items.slice(0, 20)) {
+          const title = extractTag(item, "title");
+          const link = extractTag(item, "link");
+          const description = extractTag(item, "description");
+          const pubDate = extractTag(item, "pubDate");
+          const company = extractTag(item, "company") || title.split(" at ")[1]?.trim() || "Unknown";
+
+          if (matchesSearch(title, searchTerms) || matchesSearch(description, searchTerms)) {
+            jobs.push({
+              id: `wwr-${Buffer.from(link).toString("base64").slice(0, 20)}`,
+              title: title.split(" at ")[0]?.trim() || title,
+              company: company.replace(/<!\[CDATA\[|\]\]>/g, "").trim(),
+              location: "Remote",
+              url: link,
+              companyUrl: null,
+              source: "We Work Remotely",
+              description: stripHtml(description).slice(0, 500),
+              salary: null,
+              posted: pubDate,
+              tags: [cat],
+              applyOptions: [{ label: "Apply on WWR", url: link }]
+            });
+          }
+        }
+      } catch (_) {}
+    }
+    return jobs.slice(0, 15);
+  } catch (e) {
+    console.error("WWR error:", e.message);
+    return [];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+function matchesSearch(text, searchTerms) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+
+  for (const term of searchTerms) {
+    // Full term match
+    if (lower.includes(term)) return true;
+
+    // Word-by-word match (for multi-word searches like "technical writer")
+    const words = term.split(/\s+/);
+    let wordMatches = 0;
+    for (const word of words) {
+      if (word.length > 2 && lower.includes(word)) wordMatches++;
+    }
+    if (words.length > 1 && wordMatches >= Math.ceil(words.length * 0.6)) return true;
   }
 
-  return jobs;
+  // Also match common related terms
+  const related = {
+    "compliance": ["grc", "audit", "risk", "soc 2", "iso 27001", "security"],
+    "technical writer": ["documentation", "docs", "content", "writer"],
+    "proposal": ["rfp", "bid", "contract"],
+    "documentation": ["docs", "knowledge", "content"]
+  };
+
+  for (const term of searchTerms) {
+    const relatedTerms = related[term] || [];
+    for (const rel of relatedTerms) {
+      if (lower.includes(rel)) return true;
+    }
+  }
+
+  return false;
+}
+
+function stripHtml(html) {
+  return (html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/<!\[CDATA\[|\]\]>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractTag(xml, tag) {
+  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`));
+  return match ? match[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim() : "";
 }
