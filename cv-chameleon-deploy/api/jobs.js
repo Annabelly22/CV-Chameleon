@@ -1,5 +1,5 @@
 // Multi-source job API aggregator
-// Google Jobs cascade: SerpAPI → SearchAPI → ScaleSerp → Zenserp
+// Google Jobs cascade: SerpAPI (100 lifetime) → SearchAPI (100/month renewable)
 // Free APIs: Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
 
 export default async function handler(req, res) {
@@ -89,20 +89,6 @@ async function fetchGoogleJobsCascade(titles, isRemote) {
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "SearchAPI", cascade };
   }
 
-  // 3. Try ScaleSerp (100 free/month)
-  if (process.env.SCALESERP_KEY) {
-    const result = await tryScaleSerp(query);
-    cascade.push({ service: "ScaleSerp", status: result.error || "success", count: result.jobs.length });
-    if (result.jobs.length > 0) return { jobs: result.jobs, source: "ScaleSerp", cascade };
-  }
-
-  // 4. Try Zenserp (50 free/month)
-  if (process.env.ZENSERP_KEY) {
-    const result = await tryZenserp(query);
-    cascade.push({ service: "Zenserp", status: result.error || "success", count: result.jobs.length });
-    if (result.jobs.length > 0) return { jobs: result.jobs, source: "Zenserp", cascade };
-  }
-
   return { jobs: [], source: "none", cascade };
 }
 
@@ -156,48 +142,6 @@ async function trySearchAPI(query) {
     if (data.error) return { jobs: [], error: data.error };
 
     const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "SearchAPI", i));
-    return { jobs, error: null };
-  } catch (e) {
-    return { jobs: [], error: e.message };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SCALESERP - 100 free/month
-// ═══════════════════════════════════════════════════════════════════════════
-async function tryScaleSerp(query) {
-  try {
-    const params = new URLSearchParams({
-      api_key: process.env.SCALESERP_KEY,
-      search_type: "jobs",
-      q: query
-    });
-    const r = await fetch(`https://api.scaleserp.com/search?${params}`);
-    const data = await r.json();
-    if (data.error) return { jobs: [], error: data.error };
-
-    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "ScaleSerp", i));
-    return { jobs, error: null };
-  } catch (e) {
-    return { jobs: [], error: e.message };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ZENSERP - 50 free/month
-// ═══════════════════════════════════════════════════════════════════════════
-async function tryZenserp(query) {
-  try {
-    const params = new URLSearchParams({
-      apikey: process.env.ZENSERP_KEY,
-      q: query,
-      tbm: "jobs"
-    });
-    const r = await fetch(`https://app.zenserp.com/api/v2/search?${params}`);
-    const data = await r.json();
-    if (data.error) return { jobs: [], error: data.error };
-
-    const jobs = (data.jobs || []).slice(0, 25).map((job, i) => parseGoogleJob(job, "Zenserp", i));
     return { jobs, error: null };
   } catch (e) {
     return { jobs: [], error: e.message };
