@@ -3,100 +3,200 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const apiKey = process.env.SERPAPI_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "SERPAPI_KEY not configured in Vercel environment variables." });
+  const googleApiKey = process.env.GOOGLE_API_KEY;
+  const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+
+  if (!googleApiKey || !searchEngineId) {
+    return res.status(500).json({ error: "Google Search API not configured" });
   }
 
   const { titles = [], locations = [] } = req.body;
-
-  const queries = [];
-  const titleSlice = titles.slice(0, 5);
-  const geoLocations = locations.filter(l => !["Contract","Government","BuiltIn","Remote"].includes(l));
-  const isRemote = locations.includes("Remote");
-  const isContract = locations.includes("Contract");
-  const isGov = locations.includes("Government");
-
-  for (const title of titleSlice.slice(0, 3))
-    for (const loc of geoLocations.slice(0, 2))
-      queries.push({ q: `${title} ${loc} TX`, location: `${loc}, Texas` });
-
-  if (isRemote)
-    for (const title of titleSlice.slice(0, 2))
-      queries.push({ q: `${title} remote`, location: "United States" });
-
-  if (isContract)
-    queries.push({ q: `${titleSlice[0]} contract`, location: "Texas, United States" });
-
-  if (isGov) {
-    queries.push({ q: `${titleSlice[0]} government contractor`, location: "Texas, United States" });
-    queries.push({ q: `${titleSlice[0]} federal`, location: "United States" });
+  if (!titles.length) {
+    return res.status(400).json({ error: "No job titles provided" });
   }
-
-  if (!geoLocations.length && !isRemote)
-    queries.push({ q: `${titleSlice[0]} Texas`, location: "Texas, United States" });
 
   const allJobs = [];
   const seen = new Set();
-
-  // First pass: with month filter
   const errors = [];
-  await Promise.all(queries.slice(0, 8).map(async ({ q, location }) => {
+
+  // Build search queries
+  const isRemote = locations.includes("Remote");
+  const locationStr = isRemote ? "remote" : locations.filter(l => !["Contract"].includes(l)).join(" OR ") || "remote";
+
+  // Search job boards directly
+  const jobSites = "site:linkedin.com/jobs OR site:indeed.com OR site:glassdoor.com OR site:wellfound.com OR site:remotive.com";
+
+  for (const title of titles.slice(0, 3)) {
     try {
-      const params = new URLSearchParams({ engine: "google_jobs", q, location, chips: "date_posted:month", api_key: apiKey, hl: "en", gl: "us" });
-      const r = await fetch(`https://serpapi.com/search?${params}`);
+      const query = `${title} ${locationStr} ${jobSites}`;
+      const params = new URLSearchParams({
+        key: googleApiKey,
+        cx: searchEngineId,
+        q: query,
+        num: 10,
+        dateRestrict: "m1" // Last month
+      });
+
+      const r = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
       const data = await r.json();
-      if (data?.error) {
-        errors.push(`SerpAPI error: ${data.error}`);
+
+      if (data.error) {
+        errors.push(`Google API: ${data.error.message}`);
+        continue;
       }
-      if (data?.jobs_results?.length) {
-        for (const job of data.jobs_results) {
-          const key = `${job.title}-${job.company_name}`;
+
+      if (data.items?.length) {
+        for (const item of data.items) {
+          const key = `${item.title}-${item.link}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          allJobs.push(parseJob(job, allJobs.length));
+
+          // Parse job from search result
+          const job = parseSearchResult(item, title, allJobs.length);
+          if (job) allJobs.push(job);
         }
       }
-    } catch (e) { errors.push(e.message); }
-  }));
-
-  // Fallback: no date filter if nothing came back
-  if (!allJobs.length) {
-    await Promise.all(queries.slice(0, 4).map(async ({ q, location }) => {
-      try {
-        const params = new URLSearchParams({ engine: "google_jobs", q, location, api_key: apiKey, hl: "en", gl: "us" });
-        const r = await fetch(`https://serpapi.com/search?${params}`);
-        const data = await r.json();
-        if (data?.error) {
-          errors.push(`SerpAPI fallback error: ${data.error}`);
-        }
-        if (data?.jobs_results?.length) {
-          for (const job of data.jobs_results) {
-            const key = `${job.title}-${job.company_name}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            allJobs.push(parseJob(job, allJobs.length));
-          }
-        }
-      } catch (e) { errors.push(e.message); }
-    }));
+    } catch (e) {
+      errors.push(e.message);
+    }
   }
 
-  return res.status(200).json({ jobs: allJobs.slice(0, 25), count: allJobs.length, queries: queries.length, errors: errors.length ? errors : undefined });
+  // If Google Custom Search fails or returns nothing, use fallback static job boards
+  if (!allJobs.length) {
+    const fallbackJobs = generateFallbackJobs(titles, isRemote);
+    allJobs.push(...fallbackJobs);
+  }
+
+  return res.status(200).json({
+    jobs: allJobs.slice(0, 25),
+    count: allJobs.length,
+    errors: errors.length ? errors : undefined
+  });
 }
 
-function parseJob(job, index) {
+function parseSearchResult(item, searchTitle, index) {
+  const url = item.link || "";
+  const title = item.title || "";
+
+  // Extract company from title or snippet
+  let company = "Unknown Company";
+  let jobTitle = searchTitle;
+
+  // LinkedIn format: "Job Title - Company | LinkedIn"
+  if (url.includes("linkedin.com")) {
+    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*\|/);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Indeed format: "Job Title - Company - Location | Indeed.com"
+  else if (url.includes("indeed.com")) {
+    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[-–]/);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Glassdoor format
+  else if (url.includes("glassdoor.com")) {
+    const match = title.match(/^(.+?)\s+at\s+(.+?)\s*[-–|]/i);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Generic fallback
+  else {
+    const match = title.match(/^(.+?)\s*[-–|at]\s*(.+)/i);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].replace(/\|.*$/, "").trim();
+    }
+  }
+
+  // Extract location from snippet
+  let location = "Remote";
+  const snippet = item.snippet || "";
+  const locMatch = snippet.match(/(?:in|at|location:?)\s*([A-Z][a-z]+(?:\s*,?\s*[A-Z]{2})?)/i);
+  if (locMatch) location = locMatch[1];
+  if (snippet.toLowerCase().includes("remote")) location = "Remote";
+
   return {
-    id: `${job.title}-${job.company_name}-${index}`.replace(/\s+/g, "_"),
-    title: job.title,
-    company: job.company_name,
-    location: job.location,
-    url: job.apply_options?.[0]?.link || job.share_link || "#",
-    companyUrl: `https://www.google.com/search?q=${encodeURIComponent((job.company_name || "") + " careers")}`,
-    source: job.apply_options?.[0]?.title || "Google Jobs",
-    description: job.description ? job.description.slice(0, 1500).replace(/\n+/g, " ").trim() : "No description available.",
-    salary: job.detected_extensions?.salary || null,
-    posted: job.detected_extensions?.posted_at || null,
-    applyOptions: (job.apply_options || []).slice(0, 3).map(o => ({ label: o.title, url: o.link }))
+    id: `search-${index}-${Date.now()}`,
+    title: jobTitle.slice(0, 100),
+    company: company.slice(0, 50),
+    location,
+    url,
+    companyUrl: `https://www.google.com/search?q=${encodeURIComponent(company + " careers")}`,
+    source: url.includes("linkedin") ? "LinkedIn" :
+            url.includes("indeed") ? "Indeed" :
+            url.includes("glassdoor") ? "Glassdoor" :
+            url.includes("wellfound") ? "Wellfound" :
+            url.includes("remotive") ? "Remotive" : "Web",
+    description: snippet.slice(0, 500),
+    salary: null,
+    posted: "Recent",
+    applyOptions: [{ label: "Apply", url }]
   };
+}
+
+function generateFallbackJobs(titles, isRemote) {
+  // Generate direct links to job board searches
+  const jobs = [];
+  const title = titles[0] || "Technical Writer";
+  const encodedTitle = encodeURIComponent(title);
+  const location = isRemote ? "remote" : "";
+
+  const boards = [
+    {
+      name: "LinkedIn",
+      url: `https://www.linkedin.com/jobs/search/?keywords=${encodedTitle}&f_WT=2`, // f_WT=2 is remote
+      company: "LinkedIn Jobs"
+    },
+    {
+      name: "Indeed",
+      url: `https://www.indeed.com/jobs?q=${encodedTitle}&l=${isRemote ? "remote" : ""}&fromage=14`,
+      company: "Indeed"
+    },
+    {
+      name: "Wellfound",
+      url: `https://wellfound.com/jobs?query=${encodedTitle}`,
+      company: "Wellfound (AngelList)"
+    },
+    {
+      name: "Remotive",
+      url: `https://remotive.com/remote-jobs/writing?query=${encodedTitle}`,
+      company: "Remotive"
+    },
+    {
+      name: "We Work Remotely",
+      url: `https://weworkremotely.com/remote-jobs/search?term=${encodedTitle}`,
+      company: "We Work Remotely"
+    },
+    {
+      name: "FlexJobs",
+      url: `https://www.flexjobs.com/search?search=${encodedTitle}&location=Remote`,
+      company: "FlexJobs"
+    }
+  ];
+
+  for (let i = 0; i < boards.length; i++) {
+    const board = boards[i];
+    jobs.push({
+      id: `fallback-${i}`,
+      title: `${title} positions on ${board.name}`,
+      company: board.company,
+      location: isRemote ? "Remote" : "Various",
+      url: board.url,
+      companyUrl: board.url,
+      source: board.name,
+      description: `Search for ${title} positions on ${board.name}. Click to view current openings.`,
+      salary: null,
+      posted: "Live search",
+      applyOptions: [{ label: `Search ${board.name}`, url: board.url }]
+    });
+  }
+
+  return jobs;
 }
