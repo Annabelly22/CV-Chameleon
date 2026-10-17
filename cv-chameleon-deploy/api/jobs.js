@@ -1,5 +1,5 @@
 // Multi-source job API aggregator
-// Google Jobs cascade: SerpAPI (100 lifetime) → SearchAPI (100/month renewable)
+// Google Jobs cascade: SerpAPI (100 lifetime) → SearchAPI (100/month) → Serper (2500 free, web search)
 // Free APIs: Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
 
 export default async function handler(req, res) {
@@ -89,6 +89,13 @@ async function fetchGoogleJobsCascade(titles, isRemote) {
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "SearchAPI", cascade };
   }
 
+  // 3. Try Serper.dev (2500 free - web search on job sites)
+  if (process.env.SERPER_API_KEY) {
+    const result = await trySerper(titles, isRemote);
+    cascade.push({ service: "Serper", status: result.error || "success", count: result.jobs.length });
+    if (result.jobs.length > 0) return { jobs: result.jobs, source: "Serper", cascade };
+  }
+
   return { jobs: [], source: "none", cascade };
 }
 
@@ -146,6 +153,136 @@ async function trySearchAPI(query) {
   } catch (e) {
     return { jobs: [], error: e.message };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SERPER.DEV - 2500 free (web search targeting job sites)
+// ═══════════════════════════════════════════════════════════════════════════
+async function trySerper(titles, isRemote) {
+  try {
+    const jobs = [];
+    const seen = new Set();
+    const locationStr = isRemote ? "remote" : "";
+
+    // Job sites to search
+    const jobSites = [
+      "linkedin.com/jobs",
+      "indeed.com",
+      "glassdoor.com/job",
+      "wellfound.com/jobs"
+    ];
+
+    // Search first 2 titles across job sites
+    for (const title of titles.slice(0, 2)) {
+      const siteQuery = jobSites.map(s => `site:${s}`).join(" OR ");
+      const query = `(${siteQuery}) "${title}" ${locationStr}`;
+
+      const r = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "X-API-KEY": process.env.SERPER_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ q: query, gl: "us", num: 15 })
+      });
+
+      const data = await r.json();
+      if (data.error || data.statusCode) {
+        return { jobs: [], error: data.message || data.error || "Serper error" };
+      }
+
+      for (const result of (data.organic || [])) {
+        const parsed = parseSerperResult(result, jobs.length);
+        if (!parsed) continue;
+
+        const key = `${parsed.title.toLowerCase().slice(0, 30)}-${parsed.company.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        jobs.push(parsed);
+      }
+    }
+
+    return { jobs: jobs.slice(0, 25), error: null };
+  } catch (e) {
+    return { jobs: [], error: e.message };
+  }
+}
+
+function parseSerperResult(result, index) {
+  const url = result.link || "";
+  const title = result.title || "";
+  const snippet = result.snippet || "";
+
+  // Skip non-job pages
+  if (!url.includes("/jobs") && !url.includes("/job") && !url.includes("viewjob")) {
+    return null;
+  }
+
+  let jobTitle = title;
+  let company = "Unknown";
+  let location = "Remote";
+
+  // Parse LinkedIn: "Job Title - Company | LinkedIn"
+  if (url.includes("linkedin.com")) {
+    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[|]/);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Parse Indeed: "Job Title - Company - Location | Indeed.com"
+  else if (url.includes("indeed.com")) {
+    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[-–]/);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Parse Glassdoor: "Job Title at Company | Glassdoor"
+  else if (url.includes("glassdoor.com")) {
+    const match = title.match(/^(.+?)\s+at\s+(.+?)\s*[|]/i);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Parse Wellfound: "Job Title at Company - Wellfound"
+  else if (url.includes("wellfound.com")) {
+    const match = title.match(/^(.+?)\s+at\s+(.+?)\s*[-–]/i);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+
+  // Extract location from snippet
+  const locMatch = snippet.match(/(?:Location|in|at)[:\s]+([A-Z][a-zA-Z\s,]+(?:Remote)?)/i);
+  if (locMatch) {
+    location = locMatch[1].trim();
+  } else if (snippet.toLowerCase().includes("remote")) {
+    location = "Remote";
+  }
+
+  // Determine source from URL
+  const source = url.includes("linkedin") ? "LinkedIn" :
+                 url.includes("indeed") ? "Indeed" :
+                 url.includes("glassdoor") ? "Glassdoor" :
+                 url.includes("wellfound") ? "Wellfound" : "Job Board";
+
+  return {
+    id: `serper-${index}`,
+    title: jobTitle.slice(0, 100),
+    company: company.slice(0, 60),
+    location,
+    url,
+    companyUrl: `https://www.google.com/search?q=${encodeURIComponent(company + " careers")}`,
+    source,
+    description: snippet.slice(0, 500),
+    salary: null,
+    posted: "Recent",
+    tags: [],
+    applyOptions: [{ label: `Apply on ${source}`, url }]
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
