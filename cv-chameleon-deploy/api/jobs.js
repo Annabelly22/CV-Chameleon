@@ -1,5 +1,5 @@
 // Multi-source free job API aggregator
-// Sources: Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, We Work Remotely RSS
+// Sources: Google Custom Search, Remotive, Arbeitnow, RemoteOK, Himalayas, Jobicy, WWR RSS
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -14,8 +14,9 @@ export default async function handler(req, res) {
   const isRemote = locations.includes("Remote") || locations.length === 0;
   const searchTerms = titles.slice(0, 5).map(t => t.toLowerCase());
 
-  // Fetch from all sources in parallel
-  const [remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
+  // Fetch from all sources in parallel (Google first as primary)
+  const [google, remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
+    fetchGoogleSearch(titles, isRemote),
     fetchRemotive(searchTerms),
     fetchArbeitnow(searchTerms),
     fetchRemoteOK(searchTerms),
@@ -24,8 +25,8 @@ export default async function handler(req, res) {
     fetchWeWorkRemotely(searchTerms)
   ]);
 
-  // Combine and dedupe
-  const allJobs = [...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
+  // Combine and dedupe - Google results first (highest quality)
+  const allJobs = [...google, ...remotive, ...arbeitnow, ...remoteok, ...himalayas, ...jobicy, ...wwr];
   const seen = new Set();
   const uniqueJobs = [];
 
@@ -45,9 +46,10 @@ export default async function handler(req, res) {
   scored.sort((a, b) => b.score - a.score);
 
   return res.status(200).json({
-    jobs: scored.slice(0, 30),
+    jobs: scored.slice(0, 40),
     count: scored.length,
     sources: {
+      google: google.length,
       remotive: remotive.length,
       arbeitnow: arbeitnow.length,
       remoteok: remoteok.length,
@@ -56,6 +58,130 @@ export default async function handler(req, res) {
       wwr: wwr.length
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GOOGLE CUSTOM SEARCH - 100 free queries/day, searches job sites via Google
+// ═══════════════════════════════════════════════════════════════════════════
+async function fetchGoogleSearch(titles, isRemote) {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
+
+  if (!apiKey || !cx) {
+    console.log("Google Custom Search not configured");
+    return [];
+  }
+
+  try {
+    const jobs = [];
+    const jobSites = "site:linkedin.com/jobs OR site:indeed.com/viewjob OR site:glassdoor.com/job OR site:wellfound.com/jobs";
+    const locationStr = isRemote ? "remote" : "";
+
+    // Search for first 2 titles to conserve quota (100/day)
+    for (const title of titles.slice(0, 2)) {
+      const query = `${title} ${locationStr} job ${jobSites}`;
+      const params = new URLSearchParams({
+        key: apiKey,
+        cx: cx,
+        q: query,
+        num: 10,
+        dateRestrict: "m1"
+      });
+
+      const r = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
+      if (!r.ok) {
+        console.log(`Google search failed: ${r.status}`);
+        continue;
+      }
+
+      const data = await r.json();
+      if (data.error) {
+        console.log(`Google error: ${data.error.message}`);
+        continue;
+      }
+
+      for (const item of (data.items || [])) {
+        const parsed = parseGoogleResult(item, jobs.length);
+        if (parsed) jobs.push(parsed);
+      }
+    }
+
+    return jobs.slice(0, 20);
+  } catch (e) {
+    console.error("Google search error:", e.message);
+    return [];
+  }
+}
+
+function parseGoogleResult(item, index) {
+  const url = item.link || "";
+  const title = item.title || "";
+  const snippet = item.snippet || "";
+
+  let jobTitle = title;
+  let company = "Company";
+  let location = "Remote";
+
+  // Parse LinkedIn format: "Job Title - Company | LinkedIn"
+  if (url.includes("linkedin.com")) {
+    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[|\-]/);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Parse Indeed format: "Job Title - Company - Location | Indeed.com"
+  else if (url.includes("indeed.com")) {
+    const match = title.match(/^(.+?)\s*[-–]\s*(.+?)\s*[-–]/);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Parse Glassdoor: "Job Title at Company | Glassdoor"
+  else if (url.includes("glassdoor.com")) {
+    const match = title.match(/^(.+?)\s+at\s+(.+?)\s*[|\-]/i);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].trim();
+    }
+  }
+  // Parse Wellfound: "Job Title at Company"
+  else if (url.includes("wellfound.com")) {
+    const match = title.match(/^(.+?)\s+at\s+(.+)/i);
+    if (match) {
+      jobTitle = match[1].trim();
+      company = match[2].replace(/[|\-].*$/, "").trim();
+    }
+  }
+
+  // Extract location from snippet
+  if (snippet.toLowerCase().includes("remote")) {
+    location = "Remote";
+  } else {
+    const locMatch = snippet.match(/(?:in|at|location:?)\s*([A-Z][a-z]+(?:[,\s]+[A-Z]{2})?)/);
+    if (locMatch) location = locMatch[1];
+  }
+
+  const source = url.includes("linkedin") ? "LinkedIn (Google)" :
+                 url.includes("indeed") ? "Indeed (Google)" :
+                 url.includes("glassdoor") ? "Glassdoor (Google)" :
+                 url.includes("wellfound") ? "Wellfound (Google)" : "Google";
+
+  return {
+    id: `google-${index}-${Date.now()}`,
+    title: jobTitle.slice(0, 100),
+    company: company.slice(0, 60),
+    location,
+    url,
+    companyUrl: `https://www.google.com/search?q=${encodeURIComponent(company + " careers")}`,
+    source,
+    description: snippet.slice(0, 500),
+    salary: null,
+    posted: "Recent",
+    tags: [],
+    applyOptions: [{ label: `Apply on ${source.split(" ")[0]}`, url }]
+  };
 }
 
 function calculateRelevance(title, searchTerms) {
