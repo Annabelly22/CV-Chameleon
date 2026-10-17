@@ -56,47 +56,46 @@ export default async function handler(req, res) {
       himalayas: himalayas.length,
       jobicy: jobicy.length,
       wwr: wwr.length
-    }
+    },
+    googleError: google.length === 0 ? lastGoogleError : undefined
   });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GOOGLE CUSTOM SEARCH - 100 free queries/day, searches job sites via Google
 // ═══════════════════════════════════════════════════════════════════════════
+// Store last Google error for debugging
+let lastGoogleError = null;
+
 async function fetchGoogleSearch(titles, isRemote) {
   const apiKey = process.env.GOOGLE_API_KEY;
   const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
 
   if (!apiKey || !cx) {
-    console.log("Google Custom Search not configured");
+    lastGoogleError = "Google Custom Search not configured (missing API key or CX)";
     return [];
   }
 
   try {
     const jobs = [];
-    const jobSites = "site:linkedin.com/jobs OR site:indeed.com/viewjob OR site:glassdoor.com/job OR site:wellfound.com/jobs";
     const locationStr = isRemote ? "remote" : "";
 
     // Search for first 2 titles to conserve quota (100/day)
+    // Simpler query without site: restrictions (those might be causing issues)
     for (const title of titles.slice(0, 2)) {
-      const query = `${title} ${locationStr} job ${jobSites}`;
+      const query = `"${title}" ${locationStr} job hiring 2026`;
       const params = new URLSearchParams({
         key: apiKey,
         cx: cx,
         q: query,
-        num: 10,
-        dateRestrict: "m1"
+        num: 10
       });
 
       const r = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
-      if (!r.ok) {
-        console.log(`Google search failed: ${r.status}`);
-        continue;
-      }
-
       const data = await r.json();
-      if (data.error) {
-        console.log(`Google error: ${data.error.message}`);
+
+      if (!r.ok || data.error) {
+        lastGoogleError = data.error?.message || `HTTP ${r.status}`;
         continue;
       }
 
@@ -106,11 +105,20 @@ async function fetchGoogleSearch(titles, isRemote) {
       }
     }
 
+    if (jobs.length === 0 && !lastGoogleError) {
+      lastGoogleError = "No results found";
+    }
+
     return jobs.slice(0, 20);
   } catch (e) {
-    console.error("Google search error:", e.message);
+    lastGoogleError = e.message;
     return [];
   }
+}
+
+// Expose Google error for debugging
+export function getGoogleError() {
+  return lastGoogleError;
 }
 
 function parseGoogleResult(item, index) {
