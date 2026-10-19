@@ -23,10 +23,20 @@ export default async function handler(req, res) {
   }
 
   const isRemote = locations.includes("Remote") || locations.length === 0;
+  const isAnywhere = locations.includes("Anywhere");
+  const isContract = locations.includes("Contract") || isAnywhere;
   const searchTerms = titles.slice(0, 5).map(t => t.toLowerCase());
 
+  // Build location context for searches
+  const locationContext = {
+    isRemote,
+    isAnywhere,
+    isContract,
+    region: locations.find(l => ["USA", "UK", "EU"].includes(l)) || null
+  };
+
   // Google Jobs cascade - try each until one works
-  const googleJobs = await fetchGoogleJobsCascade(titles, isRemote);
+  const googleJobs = await fetchGoogleJobsCascade(titles, locationContext);
 
   // Fetch from free sources in parallel
   const [remotive, arbeitnow, remoteok, himalayas, jobicy, wwr] = await Promise.all([
@@ -80,14 +90,23 @@ export default async function handler(req, res) {
 // Order: SerpAPI → Serper → SearchAPI → ValueSERP → ScaleSerp → Zenserp
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function fetchGoogleJobsCascade(titles, isRemote) {
+async function fetchGoogleJobsCascade(titles, locationContext) {
   const cascade = [];
-  const locationStr = isRemote ? "remote" : "";
+  const { isRemote, isAnywhere, isContract } = locationContext;
+
+  // Build search modifiers based on location context
+  let locationStr = "";
+  if (isAnywhere) {
+    locationStr = "worldwide OR global OR \"work from anywhere\" OR contract OR freelance";
+  } else if (isRemote) {
+    locationStr = "remote";
+  }
+
   const query = `${titles[0]} ${locationStr}`.trim();
 
   // 1. Try SerpAPI
   if (process.env.SERPAPI_KEY) {
-    const result = await trySerpAPI(titles, isRemote);
+    const result = await trySerpAPI(titles, locationContext);
     cascade.push({ service: "SerpAPI", status: result.error || "success", count: result.jobs.length });
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "SerpAPI", cascade };
   }
@@ -101,7 +120,7 @@ async function fetchGoogleJobsCascade(titles, isRemote) {
 
   // 3. Try Serper.dev (2500 free - web search on job sites)
   if (process.env.SERPER_API_KEY) {
-    const result = await trySerper(titles, isRemote);
+    const result = await trySerper(titles, locationContext);
     cascade.push({ service: "Serper", status: result.error || "success", count: result.jobs.length });
     if (result.jobs.length > 0) return { jobs: result.jobs, source: "Serper", cascade };
   }
@@ -112,17 +131,34 @@ async function fetchGoogleJobsCascade(titles, isRemote) {
 // ═══════════════════════════════════════════════════════════════════════════
 // SERPAPI - 100 free lifetime, then $50/month
 // ═══════════════════════════════════════════════════════════════════════════
-async function trySerpAPI(titles, isRemote) {
+async function trySerpAPI(titles, locationContext) {
   try {
     const jobs = [];
     const seen = new Set();
-    const locationStr = isRemote ? "remote" : "";
+    const { isRemote, isAnywhere, isContract, region } = locationContext;
 
-    for (const title of titles.slice(0, 2)) {
+    // Build location query based on context
+    let locationStr = "";
+    if (isAnywhere) {
+      locationStr = "worldwide remote";
+    } else if (isRemote) {
+      locationStr = "remote";
+    }
+
+    // For "Anywhere", also search contract/freelance variants
+    const searchVariants = isAnywhere
+      ? titles.slice(0, 1).flatMap(t => [`${t} worldwide remote`, `${t} contract`, `${t} freelance`])
+      : titles.slice(0, 2).map(t => `${t} ${locationStr}`.trim());
+
+    // Set geo based on region or default to global search for Anywhere
+    const geo = isAnywhere ? "uk" : (region === "UK" ? "uk" : region === "EU" ? "de" : "us");
+
+    for (const query of searchVariants.slice(0, 3)) {
       const params = new URLSearchParams({
         engine: "google_jobs",
-        q: `${title} ${locationStr}`.trim(),
-        hl: "en", gl: "us",
+        q: query,
+        hl: "en",
+        gl: geo,
         chips: "date_posted:month",
         api_key: process.env.SERPAPI_KEY
       });
@@ -135,7 +171,15 @@ async function trySerpAPI(titles, isRemote) {
         const key = `${job.title}-${job.company_name}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        jobs.push(parseGoogleJob(job, "SerpAPI", jobs.length));
+
+        const parsed = parseGoogleJob(job, "SerpAPI", jobs.length);
+        // Tag jobs that match "Anywhere" criteria
+        if (isAnywhere) {
+          parsed.tags = parsed.tags || [];
+          if (/worldwide|global|anywhere/i.test(job.location || "")) parsed.tags.push("Global");
+          if (/contract|freelance|contractor/i.test(job.title || job.description || "")) parsed.tags.push("Contract");
+        }
+        jobs.push(parsed);
       }
     }
     return { jobs: jobs.slice(0, 25), error: null };
@@ -168,32 +212,67 @@ async function trySearchAPI(query) {
 // ═══════════════════════════════════════════════════════════════════════════
 // SERPER.DEV - 2500 free (web search targeting job sites)
 // ═══════════════════════════════════════════════════════════════════════════
-async function trySerper(titles, isRemote) {
+async function trySerper(titles, locationContext) {
   try {
     const jobs = [];
     const seen = new Set();
-    const locationStr = isRemote ? "remote" : "";
+    const { isRemote, isAnywhere, isContract } = locationContext;
 
-    // Job sites to search
-    const jobSites = [
+    // Job sites - add global-friendly boards for "Anywhere" filter
+    const standardSites = [
       "linkedin.com/jobs",
       "indeed.com",
       "glassdoor.com/job",
       "wellfound.com/jobs"
     ];
 
-    // Search first 2 titles across job sites
-    for (const title of titles.slice(0, 2)) {
-      const siteQuery = jobSites.map(s => `site:${s}`).join(" OR ");
-      const query = `(${siteQuery}) "${title}" ${locationStr}`;
+    // Global/contract-friendly job boards for "Anywhere" filter
+    const globalSites = [
+      "weworkremotely.com",
+      "remotive.com",
+      "flexjobs.com",
+      "toptal.com/careers",
+      "turing.com/jobs",
+      "remoteok.com",
+      "arc.dev/remote-jobs",
+      "hired.com"
+    ];
 
+    // EOR-friendly companies that hire globally
+    const eorFriendlyCompanies = [
+      "Deel", "Remote.com", "Oyster", "Velocity Global", "Papaya Global",
+      "GitLab", "Zapier", "Automattic", "Doist", "Buffer", "InVision",
+      "Toptal", "Turing", "Andela", "Crossover"
+    ];
+
+    const jobSites = isAnywhere ? [...globalSites, ...standardSites.slice(0, 2)] : standardSites;
+
+    // Build search queries
+    const searchQueries = [];
+    for (const title of titles.slice(0, 2)) {
+      if (isAnywhere) {
+        // Multiple query variants for global jobs
+        searchQueries.push(`"${title}" worldwide remote`);
+        searchQueries.push(`"${title}" contract freelance remote`);
+        // Search EOR-friendly companies
+        const eorQuery = eorFriendlyCompanies.slice(0, 5).map(c => `"${c}"`).join(" OR ");
+        searchQueries.push(`"${title}" (${eorQuery})`);
+      } else {
+        const locationStr = isRemote ? "remote" : "";
+        const siteQuery = jobSites.map(s => `site:${s}`).join(" OR ");
+        searchQueries.push(`(${siteQuery}) "${title}" ${locationStr}`);
+      }
+    }
+
+    // Execute searches
+    for (const query of searchQueries.slice(0, 3)) {
       const r = await fetch("https://google.serper.dev/search", {
         method: "POST",
         headers: {
           "X-API-KEY": process.env.SERPER_API_KEY,
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ q: query, gl: "us", num: 15 })
+        body: JSON.stringify({ q: query, gl: isAnywhere ? "uk" : "us", num: 15 })
       });
 
       const data = await r.json();
@@ -208,6 +287,21 @@ async function trySerper(titles, isRemote) {
         const key = `${parsed.title.toLowerCase().slice(0, 30)}-${parsed.company.toLowerCase()}`;
         if (seen.has(key)) continue;
         seen.add(key);
+
+        // Tag global/contract jobs
+        if (isAnywhere) {
+          parsed.tags = parsed.tags || [];
+          if (/worldwide|global|anywhere|international/i.test(result.snippet || result.title || "")) {
+            parsed.tags.push("Global");
+          }
+          if (/contract|freelance|contractor/i.test(result.snippet || result.title || "")) {
+            parsed.tags.push("Contract");
+          }
+          if (eorFriendlyCompanies.some(c => parsed.company.toLowerCase().includes(c.toLowerCase()))) {
+            parsed.tags.push("EOR");
+          }
+        }
+
         jobs.push(parsed);
       }
     }

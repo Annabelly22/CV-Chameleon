@@ -60,6 +60,7 @@ const TITLE_GROUPS = [
 const ALL_TITLES = [...new Set(TITLE_GROUPS.flatMap(g => g.titles))];
 const LOCATION_OPTIONS = [
   { label: "Remote", emoji: "🌍" },
+  { label: "Anywhere", emoji: "🌐", desc: "Global/Contract/EOR-friendly" },
   { label: "USA", emoji: "🇺🇸" },
   { label: "UK", emoji: "🇬🇧" },
   { label: "EU", emoji: "🇪🇺" },
@@ -654,6 +655,9 @@ export default function App() {
                           <span style={{ fontSize: 9, color: "#7D8590" }}>{job.location}</span>
                           {job.salary && <span style={{ fontSize: 9, color: "#4ADE80" }}>💰 {job.salary}</span>}
                           {job.posted && <span style={{ fontSize: 9, color: "#5A6470" }}>{job.posted}</span>}
+                          {job.tags?.includes("Global") && <span style={{ fontSize: 8, background: "#0D2B1F", color: "#4ADE80", padding: "2px 6px", borderRadius: 8 }}>🌐 Global</span>}
+                          {job.tags?.includes("Contract") && <span style={{ fontSize: 8, background: "#2A2A0A", color: "#F59E0B", padding: "2px 6px", borderRadius: 8 }}>📝 Contract</span>}
+                          {job.tags?.includes("EOR") && <span style={{ fontSize: 8, background: "#1A1A2E", color: "#C084FC", padding: "2px 6px", borderRadius: 8 }}>🏢 EOR</span>}
                         </div>
                         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{job.title}</div>
                         <div style={{ fontSize: 11, color: "#7EB5F7", marginBottom: 4 }}>{job.company}</div>
