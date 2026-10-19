@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { jsPDF } from "jspdf";
+import { tailorForJob as tailorEngine } from "./tailor-engine.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BRIDGE LIST — 33 roles filtered for Nigeria-remote, no certs required
@@ -304,17 +305,31 @@ export default function App() {
     if (!masterResume) { addLog("Master resume not loaded", "error"); return; }
     const jobId = `bridge_${role.t.replace(/\s+/g, "_")}`;
     setTailoring(prev => ({ ...prev, [jobId]: "loading" }));
-    addLog(`Tailoring for ${role.t}…`, "loading");
     const job = { id: jobId, title: role.t, company: role.where.split("·")[0].trim(), location: "Remote", description: `Role: ${role.t}\nWhy: ${role.w}\nWhere: ${role.where}\nPay: ${role.pay}` };
+
+    const callModel = async ({ system, user, maxTokens }) => {
+      return await callClaude(system, user, maxTokens);
+    };
+
     try {
-      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, masterResume), 4096);
-      const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      const jsonStart = clean.indexOf("{");
-      if (jsonStart === -1) throw new Error("No JSON");
-      const parsed = JSON.parse(clean.slice(jsonStart));
-      if (!parsed.filename) parsed.filename = `Annabel_Otutu_${role.c}_${role.t.replace(/[^a-z0-9]/gi, "_").slice(0, 20)}.pdf`;
-      setTailoring(prev => ({ ...prev, [jobId]: parsed }));
-      addLog(`Resume ready — ${role.t}`, "success");
+      const result = await tailorEngine({
+        job,
+        masterResume,
+        callModel,
+        force: true,
+        onStep: (step) => addLog(`${role.t}: ${step}`, "loading")
+      });
+
+      const finalResume = {
+        ...result.resume,
+        _analysis: result.analysis,
+        _audit: result.audit,
+        _brief: result.brief,
+        _verdict: result.verdict
+      };
+
+      setTailoring(prev => ({ ...prev, [jobId]: finalResume }));
+      addLog(`✓ ${role.t} — ${result.audit?.coverage || 100}% keyword coverage`, "success");
     } catch (e) {
       setTailoring(prev => ({ ...prev, [jobId]: "error" }));
       addLog(`Failed: ${e.message}`, "error");
@@ -324,16 +339,38 @@ export default function App() {
   const tailorForJob = async (job) => {
     if (!masterResume) { addLog("Master resume not loaded", "error"); return; }
     setTailoring(prev => ({ ...prev, [job.id]: "loading" }));
-    addLog(`Tailoring for ${job.company}…`, "loading");
+
+    // Call model helper for the 3-pass engine
+    const callModel = async ({ system, user, maxTokens }) => {
+      return await callClaude(system, user, maxTokens);
+    };
+
     try {
-      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, masterResume), 4096);
-      const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      const jsonStart = clean.indexOf("{");
-      if (jsonStart === -1) throw new Error("No JSON");
-      const parsed = JSON.parse(clean.slice(jsonStart));
-      if (!parsed.filename) parsed.filename = `Annabel_Otutu_${job.company.replace(/[^a-z0-9]/gi, "_").slice(0, 15)}_${job.title.replace(/[^a-z0-9]/gi, "_").slice(0, 15)}.pdf`;
-      setTailoring(prev => ({ ...prev, [job.id]: parsed }));
-      addLog(`Resume ready — ${job.company}`, "success");
+      const result = await tailorEngine({
+        job,
+        masterResume,
+        callModel,
+        force: true, // Always proceed even with warnings
+        onStep: (step) => addLog(`${job.company}: ${step}`, "loading")
+      });
+
+      if (result.verdict === "SKIP") {
+        setTailoring(prev => ({ ...prev, [job.id]: "error" }));
+        addLog(`Skipped ${job.company}: ${result.reasons.join(", ")}`, "error");
+        return;
+      }
+
+      // Store full result including analysis and audit
+      const finalResume = {
+        ...result.resume,
+        _analysis: result.analysis,
+        _audit: result.audit,
+        _brief: result.brief,
+        _verdict: result.verdict
+      };
+
+      setTailoring(prev => ({ ...prev, [job.id]: finalResume }));
+      addLog(`✓ ${job.company} — ${result.audit?.coverage || 100}% keyword coverage`, "success");
     } catch (e) {
       setTailoring(prev => ({ ...prev, [job.id]: "error" }));
       addLog(`Failed: ${e.message}`, "error");
@@ -344,16 +381,36 @@ export default function App() {
     if (!pasteJD.trim() || !pasteTitle.trim() || !pasteCompany.trim() || !masterResume) return;
     setPasting(true);
     const job = { id: `paste_${Date.now()}`, title: pasteTitle.trim(), company: pasteCompany.trim(), location: pasteLocation.trim() || "Remote", description: pasteJD.trim() };
-    addLog(`Tailoring for ${job.company}…`, "loading");
+
+    const callModel = async ({ system, user, maxTokens }) => {
+      return await callClaude(system, user, maxTokens);
+    };
+
     try {
-      const text = await callClaude(TAILOR_SYSTEM, TAILOR_USER(job, masterResume), 4096);
-      const clean = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
-      const jsonStart = clean.indexOf("{");
-      if (jsonStart === -1) throw new Error("No JSON");
-      const parsed = JSON.parse(clean.slice(jsonStart));
-      if (!parsed.filename) parsed.filename = `Annabel_Otutu_${job.company.replace(/[^a-z0-9]/gi, "_")}_${job.title.replace(/[^a-z0-9]/gi, "_").slice(0, 15)}.pdf`;
-      setTailoring(prev => ({ ...prev, [job.id]: parsed }));
-      addLog(`Resume ready — ${job.company}`, "success");
+      const result = await tailorEngine({
+        job,
+        masterResume,
+        callModel,
+        force: true,
+        onStep: (step) => addLog(`${job.company}: ${step}`, "loading")
+      });
+
+      if (result.verdict === "SKIP") {
+        addLog(`Skipped ${job.company}: ${result.reasons.join(", ")}`, "error");
+        setPasting(false);
+        return;
+      }
+
+      const finalResume = {
+        ...result.resume,
+        _analysis: result.analysis,
+        _audit: result.audit,
+        _brief: result.brief,
+        _verdict: result.verdict
+      };
+
+      setTailoring(prev => ({ ...prev, [job.id]: finalResume }));
+      addLog(`✓ ${job.company} — ${result.audit?.coverage || 100}% keyword coverage`, "success");
       setPasteTitle(""); setPasteCompany(""); setPasteLocation(""); setPasteJD("");
       setShowPastePanel(false);
     } catch (e) { addLog(`Failed — ${e.message}`, "error"); }
