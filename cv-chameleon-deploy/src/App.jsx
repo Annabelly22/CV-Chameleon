@@ -51,7 +51,7 @@ const CATEGORIES = ["All", "Compliance", "Writing", "AI contract", "Proposals", 
 // Job titles for Live Jobs search (from v1)
 const TITLE_GROUPS = [
   { label: "AI & Forward Deployed", color: "#00FFF9", titles: ["AI Technical Writer","Prompt Engineer","AI Documentation Specialist","AI Content Strategist","AI Implementation Specialist","AI Solutions Consultant","AI Integration Engineer"]},
-  { label: "High Probability", color: "#4ADE80", titles: ["Technical Writer","Documentation Specialist","Content Developer","Content Strategist","Knowledge Management Specialist","Technical Communications Specialist"]},
+  { label: "High Probability", color: "#4ADE80", titles: ["Technical Writer","Technical Writer I","Technical Writer II","Documentation Specialist","Content Developer","Content Strategist","Knowledge Management Specialist","Technical Communications Specialist","User Experience Writer","UX Writer","API Documentation Writer","Software Documentation Writer"]},
   { label: "Compliance & GRC", color: "#C084FC", titles: ["Compliance Analyst","Security Questionnaire Analyst","GRC Analyst","Trust Analyst","Vendor Risk Analyst","Policy Writer"]},
   { label: "Proposals & Contracts", color: "#F59E0B", titles: ["Proposal Writer","RFP Specialist","Bid Writer","Contracts Analyst","Proposal Manager"]},
   { label: "Developer Docs", color: "#7EB5F7", titles: ["API Documentation Writer","Developer Documentation Specialist","SDK Documentation Writer","Technical Documentation Engineer"]}
@@ -251,7 +251,7 @@ export default function App() {
   const [previewResume, setPreviewResume] = useState(null);
   const [savedResumes, setSavedResumes] = useState([]);
   // Live Jobs state
-  const [searchTitles, setSearchTitles] = useState(["Compliance Analyst", "Technical Writer", "Proposal Writer"]);
+  const [searchTitles, setSearchTitles] = useState(["Technical Writer", "Documentation Specialist", "Content Developer", "Compliance Analyst"]);
   const [searchLocations, setSearchLocations] = useState(["Remote"]);
   const [searching, setSearching] = useState(false);
   const [liveJobs, setLiveJobs] = useState([]);
