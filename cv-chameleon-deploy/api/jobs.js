@@ -145,44 +145,50 @@ async function trySerpAPI(titles, locationContext) {
       locationStr = "remote";
     }
 
-    // For "Anywhere", also search contract/freelance variants
+    // Search with MORE titles for better variety (up to 4)
     const searchVariants = isAnywhere
-      ? titles.slice(0, 1).flatMap(t => [`${t} worldwide remote`, `${t} contract`, `${t} freelance`])
-      : titles.slice(0, 2).map(t => `${t} ${locationStr}`.trim());
+      ? titles.slice(0, 2).flatMap(t => [`${t} worldwide remote`, `${t} contract`])
+      : titles.slice(0, 4).map(t => `${t} ${locationStr}`.trim());
 
-    // Set geo based on region or default to global search for Anywhere
-    const geo = isAnywhere ? "uk" : (region === "UK" ? "uk" : region === "EU" ? "de" : "us");
+    // Set geo based on region - also vary geo for more results
+    const geoList = isAnywhere
+      ? ["uk", "us"] // Search both UK and US for global jobs
+      : [region === "UK" ? "uk" : region === "EU" ? "de" : "us"];
 
-    for (const query of searchVariants.slice(0, 3)) {
-      const params = new URLSearchParams({
-        engine: "google_jobs",
-        q: query,
-        hl: "en",
-        gl: geo,
-        chips: "date_posted:month",
-        api_key: process.env.SERPAPI_KEY
-      });
+    for (const geo of geoList) {
+      for (const query of searchVariants.slice(0, 3)) {
+        if (jobs.length >= 30) break; // Cap total results
 
-      const r = await fetch(`https://serpapi.com/search?${params}`);
-      const data = await r.json();
-      if (data.error) return { jobs: [], error: data.error };
+        const params = new URLSearchParams({
+          engine: "google_jobs",
+          q: query,
+          hl: "en",
+          gl: geo,
+          chips: "date_posted:week", // Changed to week for fresher results
+          api_key: process.env.SERPAPI_KEY
+        });
 
-      for (const job of (data.jobs_results || [])) {
-        const key = `${job.title}-${job.company_name}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        const r = await fetch(`https://serpapi.com/search?${params}`);
+        const data = await r.json();
+        if (data.error) continue; // Skip this query on error, try next
 
-        const parsed = parseGoogleJob(job, "SerpAPI", jobs.length);
-        // Tag jobs that match "Anywhere" criteria
-        if (isAnywhere) {
-          parsed.tags = parsed.tags || [];
-          if (/worldwide|global|anywhere/i.test(job.location || "")) parsed.tags.push("Global");
-          if (/contract|freelance|contractor/i.test(job.title || job.description || "")) parsed.tags.push("Contract");
+        for (const job of (data.jobs_results || [])) {
+          const key = `${job.title}-${job.company_name}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const parsed = parseGoogleJob(job, "SerpAPI", jobs.length);
+          // Tag jobs that match "Anywhere" criteria
+          if (isAnywhere) {
+            parsed.tags = parsed.tags || [];
+            if (/worldwide|global|anywhere/i.test(job.location || "")) parsed.tags.push("Global");
+            if (/contract|freelance|contractor/i.test(job.title || job.description || "")) parsed.tags.push("Contract");
+          }
+          jobs.push(parsed);
         }
-        jobs.push(parsed);
       }
     }
-    return { jobs: jobs.slice(0, 25), error: null };
+    return { jobs: jobs.slice(0, 30), error: null };
   } catch (e) {
     return { jobs: [], error: e.message };
   }
@@ -247,9 +253,9 @@ async function trySerper(titles, locationContext) {
 
     const jobSites = isAnywhere ? [...globalSites, ...standardSites.slice(0, 2)] : standardSites;
 
-    // Build search queries
+    // Build search queries - use MORE titles for variety
     const searchQueries = [];
-    for (const title of titles.slice(0, 2)) {
+    for (const title of titles.slice(0, 4)) {
       if (isAnywhere) {
         // Multiple query variants for global jobs
         searchQueries.push(`"${title}" worldwide remote`);
@@ -259,13 +265,21 @@ async function trySerper(titles, locationContext) {
         searchQueries.push(`"${title}" (${eorQuery})`);
       } else {
         const locationStr = isRemote ? "remote" : "";
-        const siteQuery = jobSites.map(s => `site:${s}`).join(" OR ");
-        searchQueries.push(`(${siteQuery}) "${title}" ${locationStr}`);
+        // Split sites into groups and search separately for more variety
+        const siteGroups = [
+          ["linkedin.com/jobs", "indeed.com"],
+          ["glassdoor.com/job", "wellfound.com/jobs"],
+          ["builtin.com/jobs", "dice.com"]
+        ];
+        for (const sites of siteGroups) {
+          const siteQuery = sites.map(s => `site:${s}`).join(" OR ");
+          searchQueries.push(`(${siteQuery}) "${title}" ${locationStr}`);
+        }
       }
     }
 
-    // Execute searches
-    for (const query of searchQueries.slice(0, 3)) {
+    // Execute searches - more queries for better variety
+    for (const query of searchQueries.slice(0, 6)) {
       const r = await fetch("https://google.serper.dev/search", {
         method: "POST",
         headers: {
