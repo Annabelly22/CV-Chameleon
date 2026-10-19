@@ -393,12 +393,17 @@ function parseSerperResult(result, index) {
 // Parse Google Jobs result (common format across APIs)
 // ═══════════════════════════════════════════════════════════════════════════
 function parseGoogleJob(job, source, index) {
+  // Handle different API response formats:
+  // SerpAPI: apply_options[].link, share_link
+  // SearchAPI: apply_link, sharing_link
+  const applyUrl = job.apply_options?.[0]?.link || job.apply_link || job.link || job.share_link || job.sharing_link || "#";
+
   return {
-    id: `${source.toLowerCase()}-${job.job_id || index}`,
+    id: `${source.toLowerCase()}-${job.job_id || btoa(job.title + job.company_name).slice(0, 20) || index}`,
     title: job.title,
     company: job.company_name || job.companyName || job.company || "Unknown",
     location: job.location || "Remote",
-    url: job.apply_options?.[0]?.link || job.link || job.share_link || "#",
+    url: applyUrl,
     companyUrl: `https://www.google.com/search?q=${encodeURIComponent((job.company_name || job.company || "") + " careers")}`,
     source: "Google Jobs",
     description: (job.description || job.snippet || "").slice(0, 500),
