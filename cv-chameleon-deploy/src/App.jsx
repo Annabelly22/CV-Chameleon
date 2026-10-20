@@ -258,7 +258,28 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [liveJobs, setLiveJobs] = useState([]);
   const [showTitlePicker, setShowTitlePicker] = useState(false);
+  const [appliedJobs, setAppliedJobs] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("cv_applied_jobs") || "[]"); } catch { return []; }
+  });
   const logRef = useRef(null);
+
+  // Strip HTML tags helper
+  const stripHtml = (html) => (html || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
+
+  // Mark job as applied
+  const markAsApplied = (jobId) => {
+    const updated = [...appliedJobs, jobId];
+    setAppliedJobs(updated);
+    localStorage.setItem("cv_applied_jobs", JSON.stringify(updated));
+    addLog("Marked as applied", "success");
+  };
+
+  // Unmark job as applied
+  const unmarkApplied = (jobId) => {
+    const updated = appliedJobs.filter(id => id !== jobId);
+    setAppliedJobs(updated);
+    localStorage.setItem("cv_applied_jobs", JSON.stringify(updated));
+  };
 
   // Load master resume
   useEffect(() => {
@@ -698,7 +719,7 @@ export default function App() {
             )}
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {liveJobs.map((job, i) => {
+              {liveJobs.filter(job => !appliedJobs.includes(job.id)).map((job, i) => {
                 const state = tailoring[job.id];
                 const done = state && state !== "loading" && state !== "error";
                 const fitScore = jobFitScore(job.title);
@@ -718,21 +739,30 @@ export default function App() {
                         </div>
                         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{job.title}</div>
                         <div style={{ fontSize: 11, color: "#7EB5F7", marginBottom: 4 }}>{job.company}</div>
-                        <div style={{ fontSize: 10, color: "#7D8590", lineHeight: 1.5 }}>{job.description?.slice(0, 200)}…</div>
+                        <div style={{ fontSize: 10, color: "#7D8590", lineHeight: 1.5 }}>{stripHtml(job.description || "").slice(0, 200)}…</div>
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 70 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 80 }}>
                         {!state && <button className="bg" onClick={() => tailorForJob(job)} style={{ padding: "5px 10px", fontSize: 9 }}>TAILOR</button>}
                         {state === "loading" && <span className="pulse" style={{ fontSize: 9, color: "#F59E0B" }}>…</span>}
                         {state === "error" && <button className="bgh" onClick={() => tailorForJob(job)} style={{ color: "#F87171", fontSize: 9 }}>RETRY</button>}
                         {done && <button className="bgh" onClick={() => setPreviewResume(state)} style={{ padding: "4px 8px", fontSize: 8 }}>👁</button>}
                         {done && <button className="bg" onClick={() => generatePDF(state)} style={{ padding: "4px 8px", fontSize: 8 }}>↓</button>}
                         {job.url && job.url !== "#" && <a href={job.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, color: "#3D6B9A", textDecoration: "none" }}>APPLY →</a>}
+                        <button onClick={() => markAsApplied(job.id)} style={{ padding: "4px 8px", fontSize: 8, background: "transparent", border: "1px solid #3D4A5A", borderRadius: 4, color: "#7D8590", cursor: "pointer" }}>✓ Applied</button>
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+            {appliedJobs.length > 0 && (
+              <div style={{ marginTop: 16, padding: 12, background: "#161B22", borderRadius: 8, border: "1px solid #21262D" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 10, color: "#7D8590" }}>Hidden: {appliedJobs.length} applied job{appliedJobs.length > 1 ? "s" : ""}</span>
+                  <button onClick={() => { setAppliedJobs([]); localStorage.removeItem("cv_applied_jobs"); }} style={{ fontSize: 9, color: "#F87171", background: "transparent", border: "none", cursor: "pointer" }}>Clear all</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
